@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:bot_toast/bot_toast.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_hbb/common/shared_state.dart';
 import 'package:flutter_hbb/common/widgets/setting_widgets.dart';
 import 'package:flutter_hbb/consts.dart';
@@ -1622,6 +1621,28 @@ customImageQualityDialog(SessionID sessionId, String id, FFI ffi) async {
       showFps: !hideFps,
       showMoreQuality: !hideMoreQuality);
   msgBoxCommon(ffi.dialogManager, 'Custom Image Quality', content, [btnClose]);
+}
+
+trackpadSpeedDialog(SessionID sessionId, FFI ffi) async {
+  int initSpeed = ffi.inputModel.trackpadSpeed;
+  final curSpeed = SimpleWrapper(initSpeed);
+  final btnClose = dialogButton('Close', onPressed: () async {
+    if (curSpeed.value <= kMaxTrackpadSpeed &&
+        curSpeed.value >= kMinTrackpadSpeed &&
+        curSpeed.value != initSpeed) {
+      await bind.sessionSetTrackpadSpeed(
+          sessionId: sessionId, value: curSpeed.value);
+      await ffi.inputModel.updateTrackpadSpeed();
+    }
+    ffi.dialogManager.dismissAll();
+  });
+  msgBoxCommon(
+      ffi.dialogManager,
+      'Trackpad speed',
+      TrackpadSpeedWidget(
+        value: curSpeed,
+      ),
+      [btnClose]);
 }
 
 void deleteConfirmDialog(Function onSubmit, String title) async {

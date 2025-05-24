@@ -98,6 +98,7 @@ const String kOptionVideoSaveDirectory = "video-save-directory";
 const String kOptionAccessMode = "access-mode";
 const String kOptionEnableKeyboard = "enable-keyboard";
 // "Settings -> Security -> Permissions"
+const String kOptionEnableRemotePrinter = "enable-remote-printer";
 const String kOptionEnableClipboard = "enable-clipboard";
 const String kOptionEnableFileTransfer = "enable-file-transfer";
 const String kOptionEnableAudio = "enable-audio";
@@ -109,6 +110,8 @@ const String kOptionAllowRemoteConfigModification =
     "allow-remote-config-modification";
 const String kOptionVerificationMethod = "verification-method";
 const String kOptionApproveMode = "approve-mode";
+const String kOptionAllowNumericOneTimePassword =
+    "allow-numeric-one-time-password";
 const String kOptionCollapseToolbar = "collapse_toolbar";
 const String kOptionShowRemoteCursor = "show_remote_cursor";
 const String kOptionFollowRemoteCursor = "follow_remote_cursor";
@@ -138,6 +141,7 @@ const String kOptionCurrentAbName = "current-ab-name";
 const String kOptionEnableConfirmClosingTabs = "enable-confirm-closing-tabs";
 const String kOptionAllowAlwaysSoftwareRender = "allow-always-software-render";
 const String kOptionEnableCheckUpdate = "enable-check-update";
+const String kOptionAllowAutoUpdate = "allow-auto-update";
 const String kOptionAllowLinuxHeadless = "allow-linux-headless";
 const String kOptionAllowRemoveWallpaper = "allow-remove-wallpaper";
 const String kOptionStopService = "stop-service";
@@ -145,9 +149,14 @@ const String kOptionDirectxCapture = "enable-directx-capture";
 const String kOptionAllowRemoteCmModification = "allow-remote-cm-modification";
 const String kOptionEnableTrustedDevices = "enable-trusted-devices";
 
+// network options
+const String kOptionAllowWebSocket = "allow-websocket";
+
 // buildin opitons
 const String kOptionHideServerSetting = "hide-server-settings";
 const String kOptionHideProxySetting = "hide-proxy-settings";
+const String kOptionHideWebSocketSetting = "hide-websocket-settings";
+const String kOptionHideRemotePrinterSetting = "hide-remote-printer-settings";
 const String kOptionHideSecuritySetting = "hide-security-settings";
 const String kOptionHideNetworkSetting = "hide-network-settings";
 const String kOptionRemovePresetPasswordWarning =
@@ -218,6 +227,21 @@ const double kMinQuality = 10;
 const double kDefaultQuality = 50;
 const double kMaxQuality = 100;
 const double kMaxMoreQuality = 2000;
+
+// trackpad speed
+const String kKeyTrackpadSpeed = 'trackpad-speed';
+const int kMinTrackpadSpeed = 10;
+const int kDefaultTrackpadSpeed = 100;
+const int kMaxTrackpadSpeed = 1000;
+
+// incomming (should be incoming) is kept, because change it will break the previous setting.
+const String kKeyPrinterIncomingJobAction = 'printer-incomming-job-action';
+const String kValuePrinterIncomingJobDismiss = 'dismiss';
+const String kValuePrinterIncomingJobDefault = '';
+const String kValuePrinterIncomingJobSelected = 'selected';
+const String kKeyPrinterSelected = 'printer-selected-name';
+const String kKeyPrinterSave = 'allow-printer-dialog-save';
+const String kKeyPrinterAllowAutoPrint = 'allow-printer-auto-print';
 
 double kNewWindowOffset = isWindows
     ? 56.0

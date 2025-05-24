@@ -28,7 +28,7 @@ use hbb_common::platform::linux::run_cmds;
 use hbb_common::protobuf::EnumOrUnknown;
 use hbb_common::{
     config::{self, keys, Config, TrustedDevice},
-    fs::{self, can_enable_overwrite_detection},
+    fs::{self, can_enable_overwrite_detection, JobType},
     futures::{SinkExt, StreamExt},
     get_time, get_version_number,
     message_proto::{option_message::BoolOption, permission_info::Permission},
@@ -67,7 +67,7 @@ lazy_static::lazy_static! {
     static ref LOGIN_FAILURES: [Arc::<Mutex<HashMap<String, (i32, i32, i32)>>>; 2] = Default::default();
     static ref SESSIONS: Arc::<Mutex<HashMap<SessionKey, Session>>> = Default::default();
     static ref ALIVE_CONNS: Arc::<Mutex<Vec<i32>>> = Default::default();
-    pub static ref AUTHED_CONNS: Arc::<Mutex<Vec<(i32, AuthConnType, SessionKey)>>> = Default::default();
+    pub static ref AUTHED_CONNS: Arc::<Mutex<Vec<AuthedConn>>> = Default::default();
     static ref SWITCH_SIDES_UUID: Arc::<Mutex<HashMap<String, (Instant, uuid::Uuid)>>> = Default::default();
     static ref WAKELOCK_SENDER: Arc::<Mutex<std::sync::mpsc::Sender<(usize, usize)>>> = Arc::new(Mutex::new(start_wakelock_thread()));
 }
@@ -245,6 +245,8 @@ pub struct Connection {
     follow_remote_cursor: bool,
     follow_remote_window: bool,
     multi_ui_session: bool,
+    tx_from_authed: mpsc::UnboundedSender<ipc::Data>,
+    printer_data: Vec<(Instant, String, Vec<u8>)>,
 }
 
 impl ConnInner {
@@ -309,6 +311,7 @@ impl Connection {
         let (tx, mut rx) = mpsc::unbounded_channel::<(Instant, Arc<Message>)>();
         let (tx_video, mut rx_video) = mpsc::unbounded_channel::<(Instant, Arc<Message>)>();
         let (tx_input, _rx_input) = std_mpsc::channel();
+        let (tx_from_authed, mut rx_from_authed) = mpsc::unbounded_channel::<ipc::Data>();
         let mut hbbs_rx = crate::hbbs_http::sync::signal_receiver();
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         let (tx_cm_stream_ready, _rx_cm_stream_ready) = mpsc::channel(1);
@@ -396,6 +399,8 @@ impl Connection {
             delayed_read_dir: None,
             #[cfg(target_os = "macos")]
             retina: Retina::default(),
+            tx_from_authed,
+            printer_data: Vec::new(),
         };
         let addr = hbb_common::try_into_v4(addr);
         if !conn.on_open(addr).await {
@@ -758,6 +763,19 @@ impl Connection {
                         break;
                     }
                 },
+                Some(data) = rx_from_authed.recv() => {
+                    match data {
+                        #[cfg(all(target_os = "windows", feature = "flutter"))]
+                        ipc::Data::PrinterData(data) => {
+                            if config::Config::get_bool_option(config::keys::OPTION_ENABLE_REMOTE_PRINTER) {
+                                conn.send_printer_request(data).await;
+                            } else {
+                                conn.send_remote_printing_disallowed().await;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 _ = second_timer.tick() => {
                     #[cfg(windows)]
                     conn.portable_check();
@@ -1104,6 +1122,22 @@ impl Connection {
         });
     }
 
+    fn get_files_for_audit(job_type: fs::JobType, mut files: Vec<FileEntry>) -> Vec<(String, i64)> {
+        files
+            .drain(..)
+            .map(|f| {
+                (
+                    if job_type == fs::JobType::Printer {
+                        "Remote print".to_owned()
+                    } else {
+                        f.name
+                    },
+                    f.size as _,
+                )
+            })
+            .collect()
+    }
+
     fn post_file_audit(
         &self,
         r#type: FileAuditType,
@@ -1212,6 +1246,8 @@ impl Connection {
             self.inner.id(),
             auth_conn_type,
             self.session_key(),
+            self.tx_from_authed.clone(),
+            self.lr.clone(),
         ));
         self.session_last_recv_time = SESSIONS
             .lock()
@@ -1232,8 +1268,8 @@ impl Connection {
 
         #[cfg(not(target_os = "android"))]
         {
-            pi.hostname = whoami::hostname();
-            pi.platform = whoami::platform().to_string();
+            pi.hostname = hbb_common::whoami::hostname();
+            pi.platform = hbb_common::whoami::platform().to_string();
         }
         #[cfg(target_os = "android")]
         {
@@ -1278,13 +1314,13 @@ impl Connection {
         #[cfg(any(target_os = "windows", feature = "unix-file-copy-paste"))]
         {
             let is_both_windows = cfg!(target_os = "windows")
-                && self.lr.my_platform == whoami::Platform::Windows.to_string();
+                && self.lr.my_platform == hbb_common::whoami::Platform::Windows.to_string();
             #[cfg(feature = "unix-file-copy-paste")]
             let is_unix_and_peer_supported = crate::is_support_file_copy_paste(&self.lr.version);
             #[cfg(not(feature = "unix-file-copy-paste"))]
             let is_unix_and_peer_supported = false;
             let is_both_macos = cfg!(target_os = "macos")
-                && self.lr.my_platform == whoami::Platform::MacOS.to_string();
+                && self.lr.my_platform == hbb_common::whoami::Platform::MacOS.to_string();
             let is_peer_support_paste_if_macos =
                 crate::is_support_file_paste_if_macos(&self.lr.version);
             let has_file_clipboard = is_both_windows
@@ -1343,7 +1379,7 @@ impl Connection {
         }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         if self.file_transfer.is_some() {
-            if crate::platform::is_prelogin() || self.tx_to_cm.send(ipc::Data::Test).is_err() {
+            if crate::platform::is_prelogin() { // }|| self.tx_to_cm.send(ipc::Data::Test).is_err() {
                 username = "".to_owned();
             }
         }
@@ -1910,6 +1946,27 @@ impl Connection {
                 return true;
             }
 
+            // https://github.com/rustdesk/rustdesk-server-pro/discussions/646
+            // `is_logon` is used to check login with `OPTION_ALLOW_LOGON_SCREEN_PASSWORD` == "Y".
+            // `is_logon_ui()` is used on Windows, because there's no good way to detect `is_locked()`.
+            // Detecting `is_logon_ui()` (if `LogonUI.exe` running) is a workaround.
+            #[cfg(target_os = "windows")]
+            let is_logon = || {
+                crate::platform::is_prelogin() || {
+                    match crate::platform::is_logon_ui() {
+                        Ok(result) => result,
+                        Err(e) => {
+                            log::error!("Failed to detect logon UI: {:?}", e);
+                            false
+                        }
+                    }
+                }
+            };
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            let is_logon = || crate::platform::is_prelogin() || crate::platform::is_locked();
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            let is_logon = || crate::platform::is_prelogin();
+
             if !hbb_common::is_ip_str(&lr.username)
                 && !hbb_common::is_domain_port_str(&lr.username)
                 && lr.username != Config::get_id()
@@ -1918,8 +1975,8 @@ impl Connection {
                     .await;
                 return false;
             } else if (password::approve_mode() == ApproveMode::Click
-                && !(crate::platform::is_prelogin()
-                    && crate::get_builtin_option(keys::OPTION_ALLOW_LOGON_SCREEN_PASSWORD) == "Y"))
+                && !(crate::get_builtin_option(keys::OPTION_ALLOW_LOGON_SCREEN_PASSWORD) == "Y"
+                    && is_logon()))
                 || password::approve_mode() == ApproveMode::Both && !password::has_valid_password()
             {
                 self.try_start_cm(lr.my_id, lr.my_name, false);
@@ -2318,7 +2375,15 @@ impl Connection {
                     }
                 }
                 Some(message::Union::FileAction(fa)) => {
-                    if self.file_transfer.is_some() {
+                    let mut handle_fa = self.file_transfer.is_some();
+                    if !handle_fa {
+                        if let Some(file_action::Union::Send(s)) = fa.union.as_ref() {
+                            if JobType::from_proto(s.file_type) == JobType::Printer {
+                                handle_fa = true;
+                            }
+                        }
+                    }
+                    if handle_fa {
                         if self.delayed_read_dir.is_some() {
                             if let Some(file_action::Union::ReadDir(rd)) = fa.union {
                                 self.delayed_read_dir = Some((rd.path, rd.include_hidden));
@@ -2375,10 +2440,34 @@ impl Connection {
                                     &self.lr.version,
                                 ));
                                 let path = s.path.clone();
+                                let r#type = JobType::from_proto(s.file_type);
+                                let data_source;
+                                match r#type {
+                                    JobType::Generic => {
+                                        data_source =
+                                            fs::DataSource::FilePath(PathBuf::from(&path));
+                                    }
+                                    JobType::Printer => {
+                                        if let Some((_, _, data)) = self
+                                            .printer_data
+                                            .iter()
+                                            .position(|(_, p, _)| *p == path)
+                                            .map(|index| self.printer_data.remove(index))
+                                        {
+                                            data_source = fs::DataSource::MemoryCursor(
+                                                std::io::Cursor::new(data),
+                                            );
+                                        } else {
+                                            // Ignore this message if the printer data is not found
+                                            return true;
+                                        }
+                                    }
+                                };
                                 match fs::TransferJob::new_read(
                                     id,
+                                    r#type,
                                     "".to_string(),
-                                    path.clone(),
+                                    data_source,
                                     s.file_num,
                                     s.include_hidden,
                                     false,
@@ -2390,19 +2479,21 @@ impl Connection {
                                     Ok(mut job) => {
                                         self.send(fs::new_dir(id, path, job.files().to_vec()))
                                             .await;
-                                        let mut files = job.files().to_owned();
+                                        let files = job.files().to_owned();
                                         job.is_remote = true;
                                         job.conn_id = self.inner.id();
+                                        let job_type = job.r#type;
                                         self.read_jobs.push(job);
                                         self.file_timer =
                                             crate::rustdesk_interval(time::interval(MILLI1));
                                         self.post_file_audit(
                                             FileAuditType::RemoteSend,
-                                            &s.path,
-                                            files
-                                                .drain(..)
-                                                .map(|f| (f.name, f.size as _))
-                                                .collect(),
+                                            if job_type == fs::JobType::Printer {
+                                                "Remote print"
+                                            } else {
+                                                &s.path
+                                            },
+                                            Self::get_files_for_audit(job_type, files),
                                             json!({}),
                                         );
                                     }
@@ -2433,11 +2524,7 @@ impl Connection {
                                 self.post_file_audit(
                                     FileAuditType::RemoteReceive,
                                     &r.path,
-                                    r.files
-                                        .to_vec()
-                                        .drain(..)
-                                        .map(|f| (f.name, f.size as _))
-                                        .collect(),
+                                    Self::get_files_for_audit(fs::JobType::Generic, r.files),
                                     json!({}),
                                 );
                                 self.file_transferred = true;
@@ -2476,13 +2563,12 @@ impl Connection {
                             }
                             Some(file_action::Union::Cancel(c)) => {
                                 self.send_fs(ipc::FS::CancelWrite { id: c.id });
-                                if let Some(job) = fs::get_job_immutable(c.id, &self.read_jobs) {
+                                if let Some(job) = fs::remove_job(c.id, &mut self.read_jobs) {
                                     self.send_to_cm(ipc::Data::FileTransferLog((
                                         "transfer".to_string(),
-                                        fs::serialize_transfer_job(job, false, true, ""),
+                                        fs::serialize_transfer_job(&job, false, true, ""),
                                     )));
                                 }
-                                fs::remove_job(c.id, &mut self.read_jobs);
                             }
                             Some(file_action::Union::SendConfirm(r)) => {
                                 if let Some(job) = fs::get_job(r.id, &mut self.read_jobs) {
@@ -2732,6 +2818,16 @@ impl Connection {
                 }
                 Some(message::Union::VoiceCallResponse(_response)) => {
                     // TODO: Maybe we can do a voice call from cm directly.
+                }
+                Some(message::Union::ScreenshotRequest(request)) => {
+                    if let Some(tx) = self.inner.tx.clone() {
+                        crate::video_service::set_take_screenshot(
+                            request.display as _,
+                            request.sid.clone(),
+                            tx,
+                        );
+                        self.refresh_video_display(Some(request.display as usize));
+                    }
                 }
                 _ => {}
             }
@@ -2997,10 +3093,18 @@ impl Connection {
                     if virtual_display_manager::amyuni_idd::is_my_display(&name) {
                         record_changed = false;
                     }
+                    #[cfg(not(target_os = "macos"))]
+                    let scale = 1.0;
+                    #[cfg(target_os = "macos")]
+                    let scale = display.scale();
+                    let original = (
+                        ((display.width() as f64) / scale).round() as _,
+                        (display.height() as f64 / scale).round() as _,
+                    );
                     if record_changed {
                         display_service::set_last_changed_resolution(
                             &name,
-                            (display.width() as _, display.height() as _),
+                            original,
                             (r.width, r.height),
                         );
                     }
@@ -3635,6 +3739,32 @@ impl Connection {
     fn try_empty_file_clipboard(&mut self) {
         try_empty_clipboard_files(ClipboardSide::Host, self.inner.id());
     }
+
+    #[cfg(all(target_os = "windows", feature = "flutter"))]
+    async fn send_printer_request(&mut self, data: Vec<u8>) {
+        // This path is only used to identify the printer job.
+        let path = format!("RustDesk://FsJob//Printer/{}", get_time());
+
+        let msg = fs::new_send(0, fs::JobType::Printer, path.clone(), 1, false);
+        self.send(msg).await;
+        self.printer_data
+            .retain(|(t, _, _)| t.elapsed().as_secs() < 60);
+        self.printer_data.push((Instant::now(), path, data));
+    }
+
+    #[cfg(all(target_os = "windows", feature = "flutter"))]
+    async fn send_remote_printing_disallowed(&mut self) {
+        let mut msg_out = Message::new();
+        let res = MessageBox {
+            msgtype: "custom-nook-nocancel-hasclose".to_owned(),
+            title: "remote-printing-disallowed-tile-tip".to_owned(),
+            text: "remote-printing-disallowed-text-tip".to_owned(),
+            link: "".to_owned(),
+            ..Default::default()
+        };
+        msg_out.set_message_box(res);
+        self.send(msg_out).await;
+    }
 }
 
 pub fn insert_switch_sides_uuid(id: String, uuid: uuid::Uuid) {
@@ -3970,6 +4100,19 @@ fn start_wakelock_thread() -> std::sync::mpsc::Sender<(usize, usize)> {
     tx
 }
 
+#[cfg(all(target_os = "windows", feature = "flutter"))]
+pub fn on_printer_data(data: Vec<u8>) {
+    crate::server::AUTHED_CONNS
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|c| c.printer)
+        .next()
+        .map(|c| {
+            c.sender.send(Data::PrinterData(data)).ok();
+        });
+}
+
 #[cfg(windows)]
 pub struct PortableState {
     pub last_uac: bool,
@@ -4103,6 +4246,14 @@ impl Retina {
     }
 }
 
+pub struct AuthedConn {
+    pub conn_id: i32,
+    pub conn_type: AuthConnType,
+    pub session_key: SessionKey,
+    pub sender: mpsc::UnboundedSender<Data>,
+    pub printer: bool,
+}
+
 mod raii {
     // ALIVE_CONNS: all connections, including unauthorized connections
     // AUTHED_CONNS: all authorized connections
@@ -4127,11 +4278,23 @@ mod raii {
     pub struct AuthedConnID(i32, AuthConnType);
 
     impl AuthedConnID {
-        pub fn new(conn_id: i32, conn_type: AuthConnType, session_key: SessionKey) -> Self {
-            AUTHED_CONNS
-                .lock()
-                .unwrap()
-                .push((conn_id, conn_type, session_key));
+        pub fn new(
+            conn_id: i32,
+            conn_type: AuthConnType,
+            session_key: SessionKey,
+            sender: mpsc::UnboundedSender<Data>,
+            lr: LoginRequest,
+        ) -> Self {
+            let printer = conn_type == crate::server::AuthConnType::Remote
+                && crate::is_support_remote_print(&lr.version)
+                && lr.my_platform == hbb_common::whoami::Platform::Windows.to_string();
+            AUTHED_CONNS.lock().unwrap().push(AuthedConn {
+                conn_id,
+                conn_type,
+                session_key,
+                sender,
+                printer,
+            });
             Self::check_wake_lock();
             use std::sync::Once;
             static _ONCE: Once = Once::new();
@@ -4153,7 +4316,7 @@ mod raii {
                 .lock()
                 .unwrap()
                 .iter()
-                .filter(|c| c.1 == AuthConnType::Remote)
+                .filter(|c| c.conn_type == AuthConnType::Remote)
                 .count();
             allow_err!(WAKELOCK_SENDER
                 .lock()
@@ -4166,7 +4329,7 @@ mod raii {
                 .lock()
                 .unwrap()
                 .iter()
-                .filter(|c| c.1 != AuthConnType::PortForward)
+                .filter(|c| c.conn_type != AuthConnType::PortForward)
                 .count()
         }
 
@@ -4179,16 +4342,16 @@ mod raii {
                     .lock()
                     .unwrap()
                     .iter()
-                    .any(|c| c.0 == conn_id && c.1 == AuthConnType::Remote);
+                    .any(|c| c.conn_id == conn_id && c.conn_type == AuthConnType::Remote);
                 // If there are 2 connections with the same peer_id and session_id, a remote connection and a file transfer or port forward connection,
                 // If any of the connections is closed allowing retry, this will not be called;
                 // If the file transfer/port forward connection is closed with no retry, the session should be kept for remote control menu action;
                 // If the remote connection is closed with no retry, keep the session is not reasonable in case there is a retry button in the remote side, and ignore network fluctuations.
-                let another_remote = AUTHED_CONNS
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|c| c.0 != conn_id && c.2 == key && c.1 == AuthConnType::Remote);
+                let another_remote = AUTHED_CONNS.lock().unwrap().iter().any(|c| {
+                    c.conn_id != conn_id
+                        && c.session_key == key
+                        && c.conn_type == AuthConnType::Remote
+                });
                 if is_remote || !another_remote {
                     lock.remove(&key);
                     log::info!("remove session");
@@ -4256,12 +4419,12 @@ mod raii {
                     .unwrap()
                     .on_connection_close(self.0);
             }
-            AUTHED_CONNS.lock().unwrap().retain(|c| c.0 != self.0);
+            AUTHED_CONNS.lock().unwrap().retain(|c| c.conn_id != self.0);
             let remote_count = AUTHED_CONNS
                 .lock()
                 .unwrap()
                 .iter()
-                .filter(|c| c.1 == AuthConnType::Remote)
+                .filter(|c| c.conn_type == AuthConnType::Remote)
                 .count();
             if remote_count == 0 {
                 #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -4269,7 +4432,7 @@ mod raii {
                     *WALLPAPER_REMOVER.lock().unwrap() = None;
                 }
                 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-                display_service::reset_resolutions();
+                display_service::restore_resolutions();
                 #[cfg(windows)]
                 let _ = virtual_display_manager::reset_all();
                 #[cfg(target_os = "linux")]
