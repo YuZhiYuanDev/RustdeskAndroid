@@ -1280,16 +1280,39 @@ fn get_after_install(
     ", create_service=get_create_service(&exe))
 }
 
+// 根据提供的选项和路径安装应用程序。
+//
+// # 参数
+//
+// * `options` - 包含安装选项（如 "desktopicon", "startmenu" 等）的字符串切片。
+// * `path` - 目标安装路径的字符串。
+// * `silent` - 布尔值，指示安装是否应静默进行（无用户交互）。
+// * `debug` - 布尔值，指示调试信息是否应在安装期间打印。
+//
+// # 返回值
+//
+// * `Result<(), Box<dyn std::error::Error>>` - 如果安装成功则返回空结果，否则返回错误。
+//
+// # 描述
+//
+// 该函数处理应用程序的安装过程。它创建必要的注册表项、设置快捷方式、将文件复制到指定目录，并根据提供的选项执行其他设置任务。
+// 该函数还处理以前安装的卸载命令并清理安装过程中创建的临时文件。
 pub fn install_me(options: &str, path: String, silent: bool, debug: bool) -> ResultType<()> {
+    // 获取卸载命令字符串而不实际执行卸载操作。
     let uninstall_str = get_uninstall(false, false);
+    // 去除提供的安装路径末尾的反斜杠。
     let mut path = path.trim_end_matches('\\').to_owned();
+    // 获取默认安装信息，包括子键、路径、开始菜单位置和可执行文件名。
     let (subkey, _path, start_menu, exe) = get_default_install_info();
     let mut exe = exe;
+    // 如果没有提供自定义安装路径，则使用默认路径。
     if path.is_empty() {
         path = _path;
     } else {
+        // 将可执行文件路径中的默认路径替换为自定义路径。
         exe = exe.replace(&_path, &path);
     }
+    // 从 crate 的 VERSION 字符串中提取主版本号、次版本号和构建号。
     let mut version_major = "0";
     let mut version_minor = "0";
     let mut version_build = "0";
@@ -1303,9 +1326,12 @@ pub fn install_me(options: &str, path: String, silent: bool, debug: bool) -> Res
     if versions.len() > 2 {
         version_build = versions[2];
     }
+    // 从 crate 配置中获取应用程序名称。
     let app_name = crate::get_app_name();
 
+    // 使用系统的临时目录创建一个临时路径。
     let tmp_path = std::env::temp_dir().to_string_lossy().to_string();
+    // 编写 VBS 脚本以创建桌面和卸载快捷方式。
     let mk_shortcut = write_cmds(
         format!(
             "
@@ -1342,34 +1368,39 @@ oLink.Save
     .to_str()
     .unwrap_or("")
     .to_owned();
+    // 初始化变量以跟踪哪些快捷方式被创建以及是否安装了打印机。
     //let tray_shortcut = get_tray_shortcut(&exe, &tmp_path)?;
     let mut reg_value_desktop_shortcuts = "0".to_owned();
     let mut reg_value_start_menu_shortcuts = "0".to_owned();
     let mut reg_value_printer = "0".to_owned();
     let mut shortcuts = Default::default();
-    if options.contains("desktopicon") {
-        shortcuts = format!(
-            "copy /Y \"{}\\{}.lnk\" \"%PUBLIC%\\Desktop\\\"",
-            tmp_path,
-            crate::get_app_name()
-        );
-        reg_value_desktop_shortcuts = "1".to_owned();
-    }
-    if options.contains("startmenu") {
-        shortcuts = format!(
-            "{shortcuts}
-md \"{start_menu}\"
-copy /Y \"{tmp_path}\\{app_name}.lnk\" \"{start_menu}\\\"
-copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{start_menu}\\\"
-     "
-        );
-        reg_value_start_menu_shortcuts = "1".to_owned();
-    }
+    // 检查是否启用了桌面图标选项并相应地设置。
+    // if options.contains("desktopicon") {
+    //     shortcuts = format!(
+    //         "copy /Y \"{}\\{}.lnk\" \"%PUBLIC%\\Desktop\\\"",
+    //         tmp_path,
+    //         crate::get_app_name()
+    //     );
+    //     reg_value_desktop_shortcuts = "1".to_owned();
+    // }
+    // 检查是否启用了开始菜单快捷方式选项并相应地设置。
+//     if options.contains("startmenu") {
+//         shortcuts = format!(
+//             "{shortcuts}
+// md \"{start_menu}\"
+// copy /Y \"{tmp_path}\\{app_name}.lnk\" \"{start_menu}\\\"
+// copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{start_menu}\\\"
+//      "
+//         );
+//         reg_value_start_menu_shortcuts = "1".to_owned();
+//     }
+    // 检查是否启用了打印机选项并且操作系统是 Windows 10 或更高版本。
     let install_printer = options.contains("printer") && crate::platform::is_win_10_or_greater();
     if install_printer {
         reg_value_printer = "1".to_owned();
     }
 
+    // 获取当前可执行文件的元数据以确定其大小。
     let meta = std::fs::symlink_metadata(std::env::current_exe()?)?;
     let size = meta.len() / 1024;
     // https://docs.microsoft.com/zh-cn/windows/win32/msi/uninstall-registry-key?redirectedfrom=MSDNa
@@ -1377,6 +1408,7 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{start_menu}\\\"
     // https://www.tenforums.com/tutorials/70903-add-remove-allowed-apps-through-windows-firewall-windows-10-a.html
     // Note: without if exist, the bat may exit in advance on some Windows7 https://github.com/rustdesk/rustdesk/issues/895
     //if exist \"{tray_shortcut}\" del /f /q \"{tray_shortcut}\" has been removed from dels
+    // 构建删除临时文件的命令。
     let dels = format!(
         "
 if exist \"{mk_shortcut}\" del /f /q \"{mk_shortcut}\"
@@ -1385,8 +1417,10 @@ if exist \"{tmp_path}\\Uninstall {app_name}.lnk\" del /f /q \"{tmp_path}\\Uninst
 if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} Tray.lnk\"
         "
     );
+    // 获取当前可执行文件的路径。
     let src_exe = std::env::current_exe()?.to_str().unwrap_or("").to_string();
 
+    // 设置许可证信息。
     // potential bug here: if run_cmd cancelled, but config file is changed.
     if let Some(lic) = get_license() {
         Config::set_option("key".into(), lic.key);
@@ -1403,7 +1437,7 @@ if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} 
 // ")
 //     };
 
-//{tray_shortcuts} has been removed from cmds
+    // 根据需要设置远程打印机安装命令。
     let install_remote_printer = if install_printer {
         // No need to use `|| true` here.
         // The script will not exit even if `--install-remote-printer` panics.
@@ -1414,9 +1448,11 @@ if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} 
         "".to_owned()
     };
 
+    // 构建完整的安装命令。
     // Remember to check if `update_me` need to be changed if changing the `cmds`.
     // No need to merge the existing dup code, because the code in these two functions are too critical.
     // New code should be written in a common function.
+    //{tray_shortcuts} has been removed from cmds
     let cmds = format!(
         "
 {uninstall_str}
@@ -1460,7 +1496,9 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{path}\\\"
         copy_exe = copy_exe_cmd(&src_exe, &exe, &path)?,
         import_config = get_import_config(&exe),
     );
+    // 运行构建好的安装命令。
     run_cmds(cmds, debug, "install")?;
+    // 安装完成后运行一些后续命令。
     run_after_run_cmds(silent);
     Ok(())
 }
