@@ -346,8 +346,10 @@ jobs:
         id: set-time
         shell: pwsh
         run: |
-          $currentTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-          echo "current_time=$currentTime" >> $env:GITHUB_OUTPUT
+          $utcTime = Get-Date -UFormat "%Y-%m-%d %H:%M:%S"
+          $beijingTime = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([datetime]$utcTime, "China Standard Time")
+          $formattedBeijingTime = $beijingTime.ToString("yyyy-MM-dd HH:mm:ss")
+          echo "current_time=$formattedBeijingTime" >> $env:GITHUB_OUTPUT
 
       - name: Export GitHub Actions cache environment variables
         uses: actions/github-script@v6
@@ -537,6 +539,9 @@ jobs:
           
           # 在 Ubuntu 中确保正确处理换行符（使用 tr 替代 sed 更可靠）
           COMMIT_MSG=$(git log -1 --pretty=%B | tr '\n' ',' | sed 's/,/<br>/g')
+
+          # 去掉最后一个 <br>
+          COMMIT_MSG=${COMMIT_MSG%,}
           
           # 使用 heredoc 语法提高可读性
           {
