@@ -567,10 +567,38 @@ jobs:
           path: ${{ github.workspace }}/artifacts
           pattern: windows-*
 
+      - name: Verify tag exists
+        id: check_tag
+        env:
+          TAG_NAME: ${{ env.TAG_NAME }}
+        run: |
+          # 检查远程是否包含该 tag
+          TAG_EXISTS=$(git ls-remote --tags origin | grep -q "refs/tags/$TAG_NAME$" && echo "true" || echo "false")
+
+          if [ "$TAG_EXISTS" = "true" ]; then
+            echo "Tag $TAG_NAME exists."
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Tag $TAG_NAME does not exist. Skipping deletion."
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Delete remote tag
+        if: steps.check_tag.outputs.tag_exists == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ env.TAG_NAME }}
+        run: |
+          # 删除远程 tag
+          git push --delete origin "refs/tags/$TAG_NAME"
+
+          echo "Tag $TAG_NAME has been deleted."
+
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG_NAME }}
+          pre-release: true
           name: "${{ env.TAG_NAME }} Build ${{ steps.gen_notes.outputs.timestamp }}"
           body: ${{ steps.gen_notes.outputs.notes }}
           files: |
