@@ -1373,7 +1373,7 @@ oLink.Save
     let mut reg_value_desktop_shortcuts = "0".to_owned();
     let mut reg_value_start_menu_shortcuts = "0".to_owned();
     let mut reg_value_printer = "0".to_owned();
-    let mut shortcuts = Default::default();
+    //let mut shortcuts = Default::default();
     // 检查是否启用了桌面图标选项并相应地设置。
     // if options.contains("desktopicon") {
     //     shortcuts = format!(
@@ -1453,6 +1453,7 @@ if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} 
     // No need to merge the existing dup code, because the code in these two functions are too critical.
     // New code should be written in a common function.
     //{tray_shortcuts} has been removed from cmds
+    //{shortcuts} has been removed from cmds
     let cmds = format!(
         "
 {uninstall_str}
@@ -1475,7 +1476,6 @@ reg add {subkey} /f /v EstimatedSize /t REG_DWORD /d {size}
 reg add {subkey} /f /v WindowsInstaller /t REG_DWORD /d 0
 cscript \"{mk_shortcut}\"
 cscript \"{uninstall_shortcut}\"
-{shortcuts}
 copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{path}\\\"
 {dels}
 {import_config}
