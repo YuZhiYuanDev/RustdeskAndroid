@@ -146,9 +146,6 @@ jobs:
         with:
           path: ${{ env.VCPKG_ROOT }}/downloads
           key: vcpkg-dl-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}
-          restore-keys: |
-            vcpkg-dl-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}
-            vcpkg-dl-${{ runner.os }}-
 
       - name: Restore binary cache 
         uses: actions/cache@v4
@@ -159,10 +156,12 @@ jobs:
             ~/.cache/vcpkg/archives
           # 动态生成缓存键（包含系统类型和 vcpkg.json 的哈希）
           key: ${{ runner.os }}-${{ matrix.job.vcpkg-triplet }}-vcpkg-${{ hashFiles('**/vcpkg.json', '**/vcpkg-configuration.json') }}
-          # 缓存回退策略
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.job.vcpkg-triplet }}-vcpkg-${{ hashFiles('**/vcpkg.json', '**/vcpkg-configuration.json') }}
-            ${{ runner.os }}-${{ matrix.job.vcpkg-triplet }}-vcpkg-
+
+      - name: Cache vcpkg build trees
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_ROOT }}/buildtrees
+          key: buildtrees-${{ matrix.job.vcpkg-triplet }}-${{ hashFiles('**/vcpkg.json') }}
 
       - name: Install vcpkg dependencies
         env:
@@ -171,7 +170,8 @@ jobs:
           if ! $VCPKG_ROOT/vcpkg \
             install \
             --triplet ${{ matrix.job.vcpkg-triplet }} \
-            --x-install-root="$VCPKG_ROOT/installed"; then
+            --x-install-root="$VCPKG_ROOT/installed" \
+            --no-binarycaching; then
             find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
               echo "$_1:"
               echo "======"
@@ -390,9 +390,6 @@ jobs:
         with:
           path: ${{ env.VCPKG_ROOT }}/downloads
           key: vcpkg-dl-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}
-          restore-keys: |
-            vcpkg-dl-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}
-            vcpkg-dl-${{ runner.os }}-
 
       - name: Restore binary cache 
         uses: actions/cache@v4
@@ -403,10 +400,12 @@ jobs:
             ~/.cache/vcpkg/archives
           # 动态生成缓存键（包含系统类型和 vcpkg.json 的哈希）
           key: ${{ runner.os }}-${{ matrix.job.vcpkg-triplet }}-vcpkg-${{ hashFiles('**/vcpkg.json', '**/vcpkg-configuration.json') }}
-          # 缓存回退策略
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.job.vcpkg-triplet }}-vcpkg-${{ hashFiles('**/vcpkg.json', '**/vcpkg-configuration.json') }}
-            ${{ runner.os }}-${{ matrix.job.vcpkg-triplet }}-vcpkg-
+
+      - name: Cache vcpkg build trees
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_ROOT }}/buildtrees
+          key: buildtrees-${{ matrix.job.vcpkg-triplet }}-${{ hashFiles('**/vcpkg.json') }}
 
       - name: Install vcpkg dependencies
         env:
@@ -415,7 +414,8 @@ jobs:
           if ! $VCPKG_ROOT/vcpkg \
             install \
             --triplet ${{ matrix.job.vcpkg-triplet }} \
-            --x-install-root="$VCPKG_ROOT/installed"; then
+            --x-install-root="$VCPKG_ROOT/installed" \
+            --no-binarycaching; then
             find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
               echo "$_1:"
               echo "======"
