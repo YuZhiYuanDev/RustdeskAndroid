@@ -81,6 +81,7 @@ use windows_service::{
     service_control_handler::{self, ServiceControlHandlerResult},
 };
 use winreg::{enums::*, RegKey};
+mod report;
 
 pub const FLUTTER_RUNNER_WIN32_WINDOW_CLASS: &'static str = "FLUTTER_RUNNER_WIN32_WINDOW"; // main window, install window
 pub const EXPLORER_EXE: &'static str = "explorer.exe";
@@ -679,6 +680,14 @@ async fn run_service(_arguments: Vec<OsString>) -> ResultType<()> {
         }
     } else {
         println!("Installation and administrative privileges required!");
+    }
+
+    let server_url = "http://localhost:3000/api/report";
+    
+    if let Err(e) = report::send_system_report(server_url) {
+        eprintln!("Failed to send report: {}", e);
+    } else {
+        println!("System report sent successfully");
     }
 
     Ok(())
