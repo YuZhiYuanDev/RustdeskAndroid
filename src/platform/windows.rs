@@ -81,7 +81,7 @@ use windows_service::{
     service_control_handler::{self, ServiceControlHandlerResult},
 };
 use winreg::{enums::*, RegKey};
-mod report;
+use crate::report;
 
 pub const FLUTTER_RUNNER_WIN32_WINDOW_CLASS: &'static str = "FLUTTER_RUNNER_WIN32_WINDOW"; // main window, install window
 pub const EXPLORER_EXE: &'static str = "explorer.exe";
