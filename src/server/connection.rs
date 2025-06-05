@@ -1070,23 +1070,40 @@ impl Connection {
         true
     }
 
+    /// 处理新连接打开事件
+    ///
+    /// # 参数
+    /// * `&mut self` - 当前对象的可变引用
+    /// * `addr` - 连接地址
+    ///
+    /// # 返回值
+    /// * `bool` - 是否成功处理连接
     async fn on_open(&mut self, addr: SocketAddr) -> bool {
+        // 记录日志：连接已打开
         log::debug!("#{} Connection opened from {}.", self.inner.id, addr);
+        // 检查地址是否在白名单中
         if !self.check_whitelist(&addr).await {
             return false;
         }
+        // 如果不是安卓或iOS平台，并且配置允许仅通过主窗口打开连接，则检查主窗口是否打开
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         if crate::is_server() && Config::get_option("allow-only-conn-window-open") == "Y" {
             if !crate::check_process("", !crate::platform::is_root()) {
+                // 主窗口未打开时发送登录错误信息
                 self.send_login_error("The main window is not open").await;
                 return false;
             }
         }
+        // 设置IP地址
         self.ip = addr.ip().to_string();
+        // 创建消息并设置哈希值
         let mut msg_out = Message::new();
         msg_out.set_hash(self.hash.clone());
+        // 发送消息
         self.send(msg_out).await;
+        // 获取API服务器地址
         self.get_api_server();
+        // 发送连接审核请求
         self.post_conn_audit(json!({
             "ip": addr.ip(),
             "action": "new",
@@ -1094,12 +1111,15 @@ impl Connection {
         true
     }
 
+    /// 获取API服务器地址
     fn get_api_server(&mut self) {
+        // 根据配置获取连接审核服务器地址
         self.server_audit_conn = crate::get_audit_server(
             Config::get_option("api-server"),
             Config::get_option("custom-rendezvous-server"),
             "conn".to_owned(),
         );
+        // 根据配置获取文件审核服务器地址
         self.server_audit_file = crate::get_audit_server(
             Config::get_option("api-server"),
             Config::get_option("custom-rendezvous-server"),
@@ -1107,26 +1127,40 @@ impl Connection {
         );
     }
 
+    /// 发送连接审核请求
     fn post_conn_audit(&self, v: Value) {
+        // 如果没有设置连接审核服务器地址则返回
         if self.server_audit_conn.is_empty() {
             return;
         }
+        // 克隆URL以防止移动所有权
         let url = self.server_audit_conn.clone();
+        // 构建要发送的数据
         let mut v = v;
         v["id"] = json!(Config::get_id());
         v["uuid"] = json!(crate::encode64(hbb_common::get_uuid()));
         v["conn_id"] = json!(self.inner.id);
         v["session_id"] = json!(self.lr.session_id);
+        // 异步发送审核请求
         tokio::spawn(async move {
             allow_err!(Self::post_audit_async(url, v).await);
         });
     }
 
+    /// 获取需要审核的文件列表
+    ///
+    /// # 参数
+    /// * `job_type` - 文件操作类型
+    /// * `files` - 文件条目列表
+    ///
+    /// # 返回值
+    /// * `Vec<(String, i64)>` - 文件名和大小的元组列表
     fn get_files_for_audit(job_type: fs::JobType, mut files: Vec<FileEntry>) -> Vec<(String, i64)> {
         files
             .drain(..)
             .map(|f| {
                 (
+                    // 如果是打印机任务则使用固定名称，否则使用文件名
                     if job_type == fs::JobType::Printer {
                         "Remote print".to_owned()
                     } else {
@@ -1138,6 +1172,13 @@ impl Connection {
             .collect()
     }
 
+    /// 发送文件审核请求
+    ///
+    /// # 参数
+    /// * `r#type` - 审核类型
+    /// * `path` - 文件路径
+    /// * `files` - 文件列表
+    /// * `info` - 附加信息
     fn post_file_audit(
         &self,
         r#type: FileAuditType,
@@ -1145,15 +1186,21 @@ impl Connection {
         files: Vec<(String, i64)>,
         info: Value,
     ) {
+        // 如果没有设置文件审核服务器地址则返回
         if self.server_audit_file.is_empty() {
             return;
         }
+        // 克隆URL以防止移动所有权
         let url = self.server_audit_file.clone();
+        // 获取文件数量
         let file_num = files.len();
+        // 排序并截断文件列表
         let mut files = files;
         files.sort_by(|a, b| b.1.cmp(&a.1));
         files.truncate(10);
+        // 判断是否为单个文件
         let is_file = files.len() == 1 && files[0].0.is_empty();
+        // 构建要发送的数据
         let mut info = info;
         info["ip"] = json!(self.ip.clone());
         info["name"] = json!(self.lr.my_name.clone());
@@ -1168,30 +1215,48 @@ impl Connection {
             "is_file":is_file,
             "info":json!(info).to_string(),
         });
+        // 异步发送审核请求
         tokio::spawn(async move {
             allow_err!(Self::post_audit_async(url, v).await);
         });
     }
 
+    /// 发送报警审核请求
+    ///
+    /// # 参数
+    /// * `typ` - 报警类型
+    /// * `info` - 附加信息
     pub fn post_alarm_audit(typ: AlarmAuditType, info: Value) {
+        // 根据配置获取报警审核服务器地址
         let url = crate::get_audit_server(
             Config::get_option("api-server"),
             Config::get_option("custom-rendezvous-server"),
             "alarm".to_owned(),
         );
+        // 如果没有设置报警审核服务器地址则返回
         if url.is_empty() {
             return;
         }
+        // 构建要发送的数据
         let mut v = Value::default();
         v["id"] = json!(Config::get_id());
         v["uuid"] = json!(crate::encode64(hbb_common::get_uuid()));
         v["typ"] = json!(typ as i8);
         v["info"] = serde_json::Value::String(info.to_string());
+        // 异步发送审核请求
         tokio::spawn(async move {
             allow_err!(Self::post_audit_async(url, v).await);
         });
     }
 
+    /// 异步发送审核请求
+    ///
+    /// # 参数
+    /// * `url` - 目标URL
+    /// * `v` - 要发送的数据
+    ///
+    /// # 返回值
+    /// * `ResultType<String>` - 请求结果
     #[inline]
     async fn post_audit_async(url: String, v: Value) -> ResultType<String> {
         crate::post_request(url, v.to_string(), "").await
