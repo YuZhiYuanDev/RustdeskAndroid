@@ -572,15 +572,25 @@ jobs:
         env:
           TAG_NAME: ${{ env.TAG_NAME }}
         run: |
-          # 检查远程是否包含该 tag
           TAG_EXISTS=$(git ls-remote --tags origin | grep -q "refs/tags/$TAG_NAME$" && echo "true" || echo "false")
-
+          echo "tag_exists=$TAG_EXISTS" >> $GITHUB_OUTPUT
           if [ "$TAG_EXISTS" = "true" ]; then
             echo "Tag $TAG_NAME exists."
-            echo "tag_exists=true" >> $GITHUB_OUTPUT
           else
-            echo "Tag $TAG_NAME does not exist. Skipping deletion."
-            echo "tag_exists=false" >> $GITHUB_OUTPUT
+            echo "Tag $TAG_NAME does not exist."
+          fi
+
+      - name: Delete associated Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ env.TAG_NAME }}
+        run: |
+          # 检查 Release 是否存在
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Deleting release associated with $TAG_NAME"
+            gh release delete "$TAG_NAME" --yes
+          else
+            echo "No release exists for $TAG_NAME"
           fi
 
       - name: Delete remote tag
@@ -589,9 +599,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ env.TAG_NAME }}
         run: |
-          # 删除远程 tag
           git push --delete origin "refs/tags/$TAG_NAME"
-
           echo "Tag $TAG_NAME has been deleted."
 
       - name: Publish Release
