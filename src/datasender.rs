@@ -1,5 +1,5 @@
 use serde::Serialize;
-use hbb_common::{ResultType, bail, tokio};
+use hbb_common::{ResultType, bail, tokio, log};
 use reqwest::Client;
 use std::collections::HashMap;
 use std::time::Duration;

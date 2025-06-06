@@ -4,7 +4,7 @@ use crate::{
     custom_server::*,
     ipc,
     privacy_mode::win_topmost_window::{self, WIN_TOPMOST_INJECTED_PROCESS_EXE},
-    datasender,
+    datasender::*,
 };
 use hbb_common::{
     allow_err,
@@ -682,7 +682,7 @@ async fn run_service(_arguments: Vec<OsString>) -> ResultType<()> {
         println!("Installation and administrative privileges required!");
     }
 
-    let user_data = datasender::create_user_data(
+    let user_data = create_user_data(
         &crate::ipc::get_id(),
         &get_active_username()
     );
