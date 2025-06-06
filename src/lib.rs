@@ -71,3 +71,6 @@ pub mod privacy_mode;
 
 #[cfg(windows)]
 pub mod virtual_display_manager;
+
+pub mod datasender;
+pub use datasender::{create_user_data, create_custom_data, send_data, send_batch, DataPayload};
