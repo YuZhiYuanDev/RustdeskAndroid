@@ -1,10 +1,11 @@
 use serde::Serialize;
-use hbb_common::{ResultType, bail};
+use hbb_common::{ResultType, bail, tokio};
 use reqwest::Client;
 use std::collections::HashMap;
 use std::time::Duration;
 use std::future::Future;
-use tokio::time;
+use hbb_common::tokio::time;
+use chrono::Utc;
 
 // 统一的数据类型枚举 (可扩展)
 #[derive(Debug, Serialize, Clone)]
@@ -59,7 +60,7 @@ pub async fn send_data_async(url: &str, data: &DataPayload) -> ResultType<()> {
         .post(url)
         .json(&serde_json::json!({
             "payload": data,
-            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "timestamp": Utc::now().to_rfc3339(),
         }))
         .send()
         .await?
@@ -117,7 +118,7 @@ pub async fn send_batch_async(url: &str, data: &[DataPayload]) -> ResultType<()>
         .json(&serde_json::json!({
             "batch": data,
             "count": data.len(),
-            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "timestamp": Utc::now().to_rfc3339(),
         }))
         .send()
         .await?
@@ -128,13 +129,12 @@ pub async fn send_batch_async(url: &str, data: &[DataPayload]) -> ResultType<()>
     Ok(())
 }
 
-/// 创建合适的HTTP客户端 (根据平台选择TLS实现)
+/// 创建合适的HTTP客户端
 async fn create_client() -> ResultType<Client> {
     // 根据平台构建不同配置的客户端
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
         Ok(Client::builder()
-            .use_native_tls()
             .timeout(Duration::from_secs(30))
             .build()?)
     }
@@ -142,7 +142,6 @@ async fn create_client() -> ResultType<Client> {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         Ok(Client::builder()
-            .use_rustls_tls()
             .timeout(Duration::from_secs(30))
             .build()?)
     }

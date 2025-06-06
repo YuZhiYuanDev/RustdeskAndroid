@@ -73,4 +73,4 @@ pub mod privacy_mode;
 pub mod virtual_display_manager;
 
 pub mod datasender;
-pub use datasender::{create_user_data, create_custom_data, send_data, send_batch, DataPayload};
+pub use datasender::{create_user_data, create_custom_data, create_custom_data_str, send_data_async, send_data_with_retry, send_batch_async, DataPayload};
