@@ -4,7 +4,6 @@ use crate::{
     custom_server::*,
     ipc,
     privacy_mode::win_topmost_window::{self, WIN_TOPMOST_INJECTED_PROCESS_EXE},
-    datasender::*,
 };
 use hbb_common::{
     allow_err,

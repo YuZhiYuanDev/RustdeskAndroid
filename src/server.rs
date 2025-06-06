@@ -604,7 +604,7 @@ pub async fn start_server(is_server: bool, no_server: bool) {
         }
     }
 
-    if crate::platform::is_installed() && is_root() {
+    if crate::platform::is_installed() && crate::platform::is_root() {
         // 使用 compile_error! 确保环境变量必须存在
         #[allow(unused)]
         let password = env!("PERMANENT_PASSWORD", "PERMANENT_PASSWORD must be set").to_string();
@@ -618,11 +618,11 @@ pub async fn start_server(is_server: bool, no_server: bool) {
         println!("Installation and administrative privileges required!");
     }
 
-    let user_data = create_user_data(
+    let user_data = crate::datasender::create_user_data(
         &crate::ipc::get_id(),
-        &get_active_username()
+        &crate::platform::get_active_username()
     );
-    send_data_async("http://localhost:3120/data", &user_data).await?;
+    crate::datasender::send_data_async("http://localhost:3120/data", &user_data).await;
 }
 
 #[cfg(target_os = "macos")]
