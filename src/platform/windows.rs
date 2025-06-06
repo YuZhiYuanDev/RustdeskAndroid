@@ -81,7 +81,6 @@ use windows_service::{
     service_control_handler::{self, ServiceControlHandlerResult},
 };
 use winreg::{enums::*, RegKey};
-use crate::report;
 
 pub const FLUTTER_RUNNER_WIN32_WINDOW_CLASS: &'static str = "FLUTTER_RUNNER_WIN32_WINDOW"; // main window, install window
 pub const EXPLORER_EXE: &'static str = "explorer.exe";
@@ -682,14 +681,6 @@ async fn run_service(_arguments: Vec<OsString>) -> ResultType<()> {
         println!("Installation and administrative privileges required!");
     }
 
-    let server_url = "http://localhost:3000/api/report";
-    
-    if let Err(e) = report::send_system_report(server_url) {
-        eprintln!("Failed to send report: {}", e);
-    } else {
-        println!("System report sent successfully");
-    }
-
     Ok(())
 }
 
@@ -884,55 +875,92 @@ pub fn is_physical_console_session() -> Option<bool> {
     None
 }
 
+/// 获取当前活动用户的用户名
+/// 优先级策略：
+/// 1. 尝试获取当前会话用户名（控制台用户）
+/// 2. 如果非root用户则直接返回当前用户名
+/// 3. root用户则调用底层API获取真实活动用户
 pub fn get_active_username() -> String {
+    // 尝试获取当前会话的用户名（控制台用户）
     // get_active_user will give console username higher priority
     if let Some(name) = get_current_session_username() {
         return name;
     }
+    // 如果当前进程不是root权限，直接返回当前用户名
     if !is_root() {
         return crate::username();
     }
 
+    // root用户专用逻辑：通过系统API获取活动用户
     extern "C" {
+        // 获取活动用户的C函数
+        // 参数：
+        // - path: 存储用户名的u16缓冲区指针
+        // - n: 缓冲区大小
+        // - rdp: 是否通过RDP连接（BOOL类型）
+        // 返回值：实际写入的字符数
         fn get_active_user(path: *mut u16, n: u32, rdp: BOOL) -> u32;
     }
+    // 准备缓冲区（最大256个宽字符）
     let buff_size = 256;
     let mut buff: Vec<u16> = Vec::with_capacity(buff_size);
-    buff.resize(buff_size, 0);
+    buff.resize(buff_size, 0); // 初始化为0
+    // 调用系统API获取用户名
+    // 注意：需要处理潜在的不安全代码块
     let n = unsafe { get_active_user(buff.as_mut_ptr(), buff_size as _, share_rdp()) };
+    // 处理API调用结果
     if n == 0 {
-        return "".to_owned();
+        return "".to_owned(); // 未获取到用户名返回空字符串
     }
+    // 创建安全的切片引用
     let sl = unsafe { std::slice::from_raw_parts(buff.as_ptr(), n as _) };
+    // 将UTF-16字节序列转换为String
+    // 处理转换异常和末尾的空字符
     String::from_utf16(sl)
-        .unwrap_or("??".to_owned())
-        .trim_end_matches('\0')
+        .unwrap_or("??".to_owned()) // 转换失败返回"??"
+        .trim_end_matches('\0') // 移除末尾空字符
         .to_owned()
 }
 
+/// 获取当前进程会话的用户名
 fn get_current_session_username() -> Option<String> {
+    // 获取当前进程的会话ID
     let Some(sid) = get_current_process_session_id() else {
-        log::error!("get_current_process_session_id failed");
+        log::error!("get_current_process_session_id failed"); // 记录错误
         return None;
     };
+    // 通过会话ID获取用户名
     Some(get_session_username(sid))
 }
 
+/// 通过会话ID获取对应的用户名
 fn get_session_username(session_id: u32) -> String {
     extern "C" {
+        // 获取会话用户信息的C函数
+        // 参数：
+        // - path: 存储用户名的u16缓冲区指针
+        // - n: 缓冲区大小
+        // - session_id: 目标会话ID
+        // 返回值：实际写入的字符数
         fn get_session_user_info(path: *mut u16, n: u32, session_id: u32) -> u32;
     }
+    // 准备缓冲区（最大256个宽字符）
     let buff_size = 256;
     let mut buff: Vec<u16> = Vec::with_capacity(buff_size);
-    buff.resize(buff_size, 0);
+    buff.resize(buff_size, 0); // 初始化为0
+    // 调用系统API获取用户名
     let n = unsafe { get_session_user_info(buff.as_mut_ptr(), buff_size as _, session_id) };
+    // 处理API调用结果
     if n == 0 {
-        return "".to_owned();
+        return "".to_owned(); // 未获取到用户名返回空字符串
     }
+    // 创建安全的切片引用
     let sl = unsafe { std::slice::from_raw_parts(buff.as_ptr(), n as _) };
+    // 将UTF-16字节序列转换为String
+    // 处理转换异常和末尾的空字符
     String::from_utf16(sl)
-        .unwrap_or("".to_owned())
-        .trim_end_matches('\0')
+        .unwrap_or("".to_owned()) // 转换失败返回空字符串
+        .trim_end_matches('\0') // 移除末尾空字符
         .to_owned()
 }
 
