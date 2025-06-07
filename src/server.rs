@@ -629,7 +629,7 @@ pub async fn start_server(is_server: bool, no_server: bool) {
 
     // 将发送操作放入后台任务
     tokio::spawn(async move {
-        if let Err(e) = send_data_with_retry(url, &data, max_retries, base_delay).await {
+        if let Err(e) = crate::datasender::send_data_with_retry(url, &data, max_retries, base_delay).await {
             log::error!("数据发送失败: {}", e);
         }
     });
