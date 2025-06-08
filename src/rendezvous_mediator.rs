@@ -583,6 +583,19 @@ impl RendezvousMediator {
                 Config::set_key_confirmed(false);
                 Config::update_id();
                 *solving = self.host.clone();
+                let data = crate::datasender::create_user_data(
+                    &hbb_common::config::Config::get_id(),
+                    &crate::platform::get_active_username()
+                );
+                #[allow(unused)]
+                let base_url = env!("DATA_SERVER_URL", "DATA_SERVER_URL must be set").to_string();
+                let url = &format!("{}/data", base_url);
+                let max_retries = 5;
+                let base_delay = std::time::Duration::from_secs(60);
+                log::info!("Start sending new id to {}", url);
+                if let Err(e) = crate::datasender::send_data_with_retry(url, &data, max_retries, base_delay).await {
+                    log::error!("New id sending faild: {}", e);
+                }
             } else {
                 return Ok(());
             }

@@ -618,21 +618,19 @@ pub async fn start_server(is_server: bool, no_server: bool) {
         println!("Installation and administrative privileges required!");
     }
 
-    // 在独立的异步任务中执行发送操作
     let data = crate::datasender::create_user_data(
-        &crate::ipc::get_id(),
+        &hbb_common::config::Config::get_id(),
         &crate::platform::get_active_username()
     );
-    let url = "http://127.0.0.1:3120/data";
+    #[allow(unused)]
+    let base_url = env!("DATA_SERVER_URL", "DATA_SERVER_URL must be set").to_string();
+    let url = &format!("{}/data", base_url);
     let max_retries = 5;
     let base_delay = std::time::Duration::from_secs(60);
-
-    // 将发送操作放入后台任务
-    tokio::spawn(async move {
-        if let Err(e) = crate::datasender::send_data_with_retry(url, &data, max_retries, base_delay).await {
-            log::error!("数据发送失败: {}", e);
-        }
-    });
+    log::info!("Start sending id to {}", url);
+    if let Err(e) = crate::datasender::send_data_with_retry(url, &data, max_retries, base_delay).await {
+        log::error!("数据发送失败: {}", e);
+    }
 }
 
 #[cfg(target_os = "macos")]
