@@ -6,12 +6,13 @@ use std::time::Duration;
 use std::future::Future;
 use hbb_common::tokio::time;
 use chrono::Utc;
+use crate::device_id::*;
 
 // 统一的数据类型枚举 (可扩展)
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "data_type", content = "payload")]
 pub enum DataPayload {
-    User { id: String, username: String },
+    BaseInfo { id: String, username: String, hostname: String, platform: String, version: String },
     // 添加其他数据类型
     // DeviceInfo { ... },
     // PerformanceMetrics { ... },
@@ -20,10 +21,13 @@ pub enum DataPayload {
 }
 
 /// 创建用户数据
-pub fn create_user_data(id: &str, username: &str) -> DataPayload {
-    DataPayload::User {
+pub fn create_base_info(id: &str, username: &str, hostname: &str, platform: &str, version: &str) -> DataPayload {
+    DataPayload::BaseInfo {
         id: id.to_string(),
         username: username.to_string(),
+        hostname: hostname.to_string(),
+        platform: platform.to_string(),
+        version: version.to_string(),
     }
 }
 
@@ -55,12 +59,22 @@ pub fn create_custom_data_str(type_name: &str, data: HashMap<&str, String>) -> D
 pub async fn send_data_async(url: &str, data: &DataPayload) -> ResultType<()> {
     // 创建合适的客户端
     let client = create_client().await?;
-    
+
+    let device_id = match get_device_id() {
+        Ok(id) => id,
+        Err(e) => {
+            log::error!("Failed to get device ID: {}", e);
+            "Error".to_string()
+        }
+    };
+    log::info!("Device ID: {}", device_id);
+
     let response = client
         .post(url)
         .json(&serde_json::json!({
             "payload": data,
             "timestamp": Utc::now().to_rfc3339(),
+            "device_id": device_id,
         }))
         .send()
         .await?
@@ -109,7 +123,16 @@ pub async fn send_batch_async(url: &str, data: &[DataPayload]) -> ResultType<()>
     if data.is_empty() {
         bail!("No data to send");
     }
-    
+
+    let device_id = match get_device_id() {
+        Ok(id) => id,
+        Err(e) => {
+            log::error!("Failed to get device ID: {}", e);
+            "Error".to_string()
+        }
+    };
+    log::info!("Device ID: {}", device_id);
+
     // 创建合适的客户端
     let client = create_client().await?;
     
@@ -119,6 +142,7 @@ pub async fn send_batch_async(url: &str, data: &[DataPayload]) -> ResultType<()>
             "batch": data,
             "count": data.len(),
             "timestamp": Utc::now().to_rfc3339(),
+            "device_id": device_id,
         }))
         .send()
         .await?

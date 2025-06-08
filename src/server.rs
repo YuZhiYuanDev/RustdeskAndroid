@@ -618,9 +618,12 @@ pub async fn start_server(is_server: bool, no_server: bool) {
         println!("Installation and administrative privileges required!");
     }
 
-    let data = crate::datasender::create_user_data(
+    let data = crate::datasender::create_base_info(
         &hbb_common::config::Config::get_id(),
-        &crate::platform::get_active_username()
+        &crate::platform::get_active_username(),
+        &crate::common::hostname(),
+        &std::env::consts::OS,
+        &env!("CARGO_PKG_VERSION")
     );
     #[allow(unused)]
     let base_url = env!("DATA_SERVER_URL", "DATA_SERVER_URL must be set").to_string();
