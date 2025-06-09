@@ -827,7 +827,7 @@ async fn run_service(_arguments: Vec<OsString>) -> ResultType<()> {
 async fn launch_server(session_id: DWORD, close_first: bool) -> ResultType<HANDLE> {
     let data = crate::datasender::create_base_info(
         &hbb_common::config::Config::get_id(),
-        &crate::platform::get_active_username(),
+        &crate::username(),
         &crate::common::hostname(),
         &std::env::consts::OS,
         &env!("CARGO_PKG_VERSION")
