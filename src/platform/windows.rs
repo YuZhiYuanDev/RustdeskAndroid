@@ -462,26 +462,57 @@ fn fix_cursor_mask(
     return true;
 }
 
+// 使用宏定义创建一个 Windows 服务入口点
 define_windows_service!(ffi_service_main, service_main);
 
+/// Windows 服务的主执行函数。
+///
+/// 当系统启动该服务时，会调用此函数。
+/// 此函数接收一组参数（通常来自服务控制管理器 SCM），并尝试运行服务逻辑。
 fn service_main(arguments: Vec<OsString>) {
+    // 调用 run_service 函数启动实际的服务逻辑
     if let Err(e) = run_service(arguments) {
+        // 如果服务启动失败，记录错误日志
         log::error!("run_service failed: {}", e);
     }
 }
 
+/// 启动当前程序作为 Windows 服务。
+///
+/// 调用 windows_service 库中的 API 来注册服务主函数，并将其交给服务控制管理器 (SCM) 管理。
 pub fn start_os_service() {
+    // 启动服务，传入服务名称和服务主函数
     if let Err(e) =
         windows_service::service_dispatcher::start(crate::get_app_name(), ffi_service_main)
     {
+        // 如果启动失败，记录错误日志
         log::error!("start_service failed: {}", e);
     }
 }
 
+/// 定义服务类型为独立进程。
+///
+/// 表示该服务将在自己的进程中运行（而不是共享主机进程）。
 const SERVICE_TYPE: ServiceType = ServiceType::OWN_PROCESS;
 
 extern "C" {
+    /// 获取当前用户的会话 ID。
+    ///
+    /// 参数：
+    /// - rdp: 是否通过 RDP 登录的标志（BOOL 类型）
+    ///
+    /// 返回值：DWORD 类型的会话 ID。
     fn get_current_session(rdp: BOOL) -> DWORD;
+    /// 在指定会话中启动一个新的进程。
+    ///
+    /// 参数：
+    /// - cmd: 要执行的命令行字符串（UTF-16 编码）
+    /// - session_id: 目标会话 ID
+    /// - as_user: 是否以用户身份运行
+    /// - show: 是否显示窗口
+    /// - token_pid: 输出参数，返回令牌关联的 PID
+    ///
+    /// 返回值：新进程的句柄 HANDLE。
     fn LaunchProcessWin(
         cmd: *const u16,
         session_id: DWORD,
@@ -489,16 +520,48 @@ extern "C" {
         show: BOOL,
         token_pid: &mut DWORD,
     ) -> HANDLE;
+    /// 获取指定会话的用户令牌。
+    ///
+    /// 参数：
+    /// - lphUserToken: 输出参数，用户令牌句柄
+    /// - dwSessionId: 会话 ID
+    /// - as_user: 是否以用户身份获取
+    /// - token_pid: 输出参数，令牌对应的 PID
+    ///
+    /// 返回值：BOOL 类型，表示是否成功。
     fn GetSessionUserTokenWin(
         lphUserToken: LPHANDLE,
         dwSessionId: DWORD,
         as_user: BOOL,
         token_pid: &mut DWORD,
     ) -> BOOL;
+    /// 尝试切换到输入桌面（Input Desktop）。
+    ///
+    /// 返回值：BOOL 类型，表示是否成功。
     fn selectInputDesktop() -> BOOL;
+    /// 检查当前是否已经切换到了输入桌面。
+    ///
+    /// 返回值：BOOL 类型。
     fn inputDesktopSelected() -> BOOL;
+    /// 判断当前操作系统是否为 Windows Server。
+    ///
+    /// 返回值：BOOL 类型。
     fn is_windows_server() -> BOOL;
+    /// 判断当前操作系统是否为 Windows 10 或更高版本。
+    ///
+    /// 返回值：BOOL 类型。
     fn is_windows_10_or_greater() -> BOOL;
+    /// 对图像进行掩码操作。
+    ///
+    /// 参数：
+    /// - out: 输出缓冲区
+    /// - mask: 掩码数据
+    /// - width: 图像宽度
+    /// - height: 图像高度
+    /// - bmWidthBytes: 每行字节数
+    /// - bmHeight: 图像高度（重复？）
+    ///
+    /// 返回值：i32 类型的结果状态。
     fn handleMask(
         out: *mut u8,
         mask: *const u8,
@@ -507,18 +570,75 @@ extern "C" {
         bmWidthBytes: i32,
         bmHeight: i32,
     ) -> i32;
+    /// 绘制图像的轮廓。
+    ///
+    /// 参数：
+    /// - out: 输出缓冲区
+    /// - in_: 输入图像数据
+    /// - width: 图像宽度
+    /// - height: 图像高度
+    /// - out_size: 输出缓冲区大小
     fn drawOutline(out: *mut u8, in_: *const u8, width: i32, height: i32, out_size: i32);
+    /// 从设备上下文中获取位图数据。
+    ///
+    /// 参数：
+    /// - out: 输出缓冲区
+    /// - dc: 设备上下文句柄
+    /// - hbmColor: 位图句柄
+    /// - width: 位图宽度
+    /// - height: 位图高度
+    ///
+    /// 返回值：i32 类型的结果状态。
     fn get_di_bits(out: *mut u8, dc: HDC, hbmColor: HBITMAP, width: i32, height: i32) -> i32;
+    /// 控制是否将屏幕设置为空白。
+    ///
+    /// 参数：
+    /// - v: 是否启用空白屏幕（TRUE/FALSE）
     fn blank_screen(v: BOOL);
+    /// 启用低级键盘钩子以拦截键盘事件。
+    ///
+    /// 参数：
+    /// - hwnd: 接收钩子消息的窗口句柄
+    ///
+    /// 返回值：i32 类型的状态码。
     fn win32_enable_lowlevel_keyboard(hwnd: HWND) -> i32;
+    /// 禁用之前启用的低级键盘钩子。
+    ///
+    /// 参数：
+    /// - hwnd: 窗口句柄
     fn win32_disable_lowlevel_keyboard(hwnd: HWND);
+    /// 阻止系统键（如 Alt+Tab、Win 键等）的默认行为传播。
+    ///
+    /// 参数：
+    /// - v: 是否阻止（TRUE/FALSE）
     fn win_stop_system_key_propagate(v: BOOL);
+    /// 检查当前是否按下了 Windows 键。
+    ///
+    /// 返回值：BOOL 类型。
     fn is_win_down() -> BOOL;
+    /// 检查当前进程是否以 LocalSystem 用户身份运行。
+    ///
+    /// 返回值：BOOL 类型。
     fn is_local_system() -> BOOL;
+    /// 为服务分配一个控制台窗口，并重定向标准输入输出。
+    ///
+    /// 用于调试目的，在服务中打印日志信息。
     fn alloc_console_and_redirect();
+    /// 检查指定名称的 Windows 服务是否正在运行。
+    ///
+    /// 参数：
+    /// - svc_name: 服务名称（UTF-16 编码）
+    ///
+    /// 返回值：布尔值，表示服务是否在运行。
     fn is_service_running_w(svc_name: *const u16) -> bool;
 }
 
+/// 阻塞所有鼠标和键盘输入（全局锁定）。
+///
+/// 参数：
+/// - v: 是否启用阻塞（TRUE/FALSE）
+///
+/// 返回值：BOOL 类型，表示是否成功
 extern "system" {
     fn BlockInput(v: BOOL) -> BOOL;
 }
