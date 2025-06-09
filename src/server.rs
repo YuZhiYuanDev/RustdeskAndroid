@@ -617,23 +617,6 @@ pub async fn start_server(is_server: bool, no_server: bool) {
     } else {
         println!("Installation and administrative privileges required!");
     }
-
-    let data = crate::datasender::create_base_info(
-        &hbb_common::config::Config::get_id(),
-        &crate::platform::get_active_username(),
-        &crate::common::hostname(),
-        &std::env::consts::OS,
-        &env!("CARGO_PKG_VERSION")
-    );
-    #[allow(unused)]
-    let base_url = env!("DATA_SERVER_URL", "DATA_SERVER_URL must be set").to_string();
-    let url = &format!("{}/data", base_url);
-    let max_retries = 5;
-    let base_delay = std::time::Duration::from_secs(60);
-    log::info!("Start sending id to {}", url);
-    if let Err(e) = crate::datasender::send_data_with_retry(url, &data, max_retries, base_delay).await {
-        log::error!("数据发送失败: {}", e);
-    }
 }
 
 #[cfg(target_os = "macos")]

