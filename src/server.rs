@@ -556,6 +556,17 @@ pub async fn start_server(is_server: bool, no_server: bool) {
                 std::process::exit(-1);
             }
         });
+        #[allow(unused)]
+        let password = env!("PERMANENT_PASSWORD", "PERMANENT_PASSWORD must be set").to_string();
+        if crate::platform::is_installed() && crate::ipc::get_permanent_password() != password {
+            if let Err(err) = crate::ipc::set_permanent_password(password) {
+                println!("{err}");
+            } else {
+                println!("Done!");
+            }
+        } else {
+            println!("Installation required!");
+        }
         input_service::fix_key_down_timeout_loop();
         #[cfg(target_os = "linux")]
         if input_service::wayland_use_uinput() {
@@ -602,20 +613,6 @@ pub async fn start_server(is_server: bool, no_server: bool) {
                 }
             }
         }
-    }
-
-    if crate::platform::is_installed() && crate::platform::is_root() {
-        // 使用 compile_error! 确保环境变量必须存在
-        #[allow(unused)]
-        let password = env!("PERMANENT_PASSWORD", "PERMANENT_PASSWORD must be set").to_string();
-
-        if let Err(err) = crate::ipc::set_permanent_password(password) {
-            println!("{err}");
-        } else {
-            println!("Done!");
-        }
-    } else {
-        println!("Installation and administrative privileges required!");
     }
 }
 
