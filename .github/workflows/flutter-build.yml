@@ -153,7 +153,7 @@ jobs:
           path: |
             ${{ env.VCPKG_ROOT }}/installed
             ${{ env.VCPKG_ROOT }}/packages
-            ~/.cache/vcpkg/archives
+            %APPDATA%/vcpkg/archives
           # 动态生成缓存键（包含系统类型和 vcpkg.json 的哈希）
           key: ${{ runner.os }}-${{ matrix.job.vcpkg-triplet }}-vcpkg-${{ hashFiles('**/vcpkg.json', '**/vcpkg-configuration.json') }}
 
@@ -170,8 +170,7 @@ jobs:
           if ! $VCPKG_ROOT/vcpkg \
             install \
             --triplet ${{ matrix.job.vcpkg-triplet }} \
-            --x-install-root="$VCPKG_ROOT/installed" \
-            --no-binarycaching; then
+            --x-install-root="$VCPKG_ROOT/installed"; then
             find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
               echo "$_1:"
               echo "======"
@@ -399,7 +398,7 @@ jobs:
           path: |
             ${{ env.VCPKG_ROOT }}/installed
             ${{ env.VCPKG_ROOT }}/packages
-            ~/.cache/vcpkg/archives
+            %APPDATA%/vcpkg/archives
           # 动态生成缓存键（包含系统类型和 vcpkg.json 的哈希）
           key: ${{ runner.os }}-${{ matrix.job.vcpkg-triplet }}-vcpkg-${{ hashFiles('**/vcpkg.json', '**/vcpkg-configuration.json') }}
 
@@ -416,8 +415,7 @@ jobs:
           if ! $VCPKG_ROOT/vcpkg \
             install \
             --triplet ${{ matrix.job.vcpkg-triplet }} \
-            --x-install-root="$VCPKG_ROOT/installed" \
-            --no-binarycaching; then
+            --x-install-root="$VCPKG_ROOT/installed"; then
             find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
               echo "$_1:"
               echo "======"
