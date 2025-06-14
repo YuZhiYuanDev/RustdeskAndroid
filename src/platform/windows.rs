@@ -849,19 +849,7 @@ async fn launch_server(session_id: DWORD, close_first: bool) -> ResultType<HANDL
         "\"{}\" --server",
         std::env::current_exe()?.to_str().unwrap_or("")
     );
-    let serverlaunchhandle = launch_privileged_process(session_id, &cmd)?;
-    #[allow(unused)]
-    let password = env!("PERMANENT_PASSWORD", "PERMANENT_PASSWORD must be set").to_string();
-    if crate::platform::is_installed() && crate::ipc::get_permanent_password() != password {
-        if let Err(err) = crate::ipc::set_permanent_password(password) {
-            println!("{err}");
-        } else {
-            println!("Done!");
-        }
-    } else {
-        println!("Installation required!");
-    }
-    Ok(serverlaunchhandle)
+    launch_privileged_process(session_id, &cmd)
 }
 
 pub fn launch_privileged_process(session_id: DWORD, cmd: &str) -> ResultType<HANDLE> {
