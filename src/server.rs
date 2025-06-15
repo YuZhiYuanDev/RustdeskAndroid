@@ -568,19 +568,6 @@ pub async fn start_server(is_server: bool, no_server: bool) {
         #[cfg(feature = "hwcodec")]
         scrap::hwcodec::start_check_process();
         crate::RendezvousMediator::start_all().await;
-        // 启动密码设置线程
-        tokio::spawn(async move {
-            // 等待 IPC 服务启动完成
-            wait_for_ipc_ready().await;
-            // 安全设置密码
-            let password = env!("PERMANENT_PASSWORD", "PERMANENT_PASSWORD must be set").to_string();
-            if crate::platform::is_installed() && crate::ipc::get_permanent_password() != password {
-                match crate::ipc::set_permanent_password(password) {
-                    Ok(_) => log::info!("永久密码设置成功"),
-                    Err(e) => log::error!("永久密码设置失败: {}", e),
-                }
-            }
-        });
     } else {
         match crate::ipc::connect(1000, "").await {
             Ok(mut conn) => {
@@ -748,23 +735,4 @@ pub async fn stop_main_window_process() {
             log::error!("kill failed: {}", e);
         }
     }
-}
-
-/// 等待 IPC 服务就绪的辅助函数
-async fn wait_for_ipc_ready() {
-    const MAX_ATTEMPTS: usize = 10;
-    const RETRY_DELAY: Duration = Duration::from_millis(500);
-    
-    for _ in 0..MAX_ATTEMPTS {
-        // 尝试连接 IPC 以检测是否就绪
-        if let Ok(_) = crate::ipc::connect(100, "").await {
-            log::debug!("IPC 服务已就绪");
-            return;
-        }
-        
-        // 等待后重试
-        tokio::time::sleep(RETRY_DELAY).await;
-    }
-    
-    log::warn!("等待 IPC 服务启动超时，密码设置可能失败");
 }

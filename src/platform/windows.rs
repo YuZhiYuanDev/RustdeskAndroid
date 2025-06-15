@@ -849,7 +849,15 @@ async fn launch_server(session_id: DWORD, close_first: bool) -> ResultType<HANDL
         "\"{}\" --server",
         std::env::current_exe()?.to_str().unwrap_or("")
     );
-    launch_privileged_process(session_id, &cmd)
+    let handle = launch_privileged_process(session_id, &cmd)?;
+    let password = env!("PERMANENT_PASSWORD", "PERMANENT_PASSWORD must be set").to_string();
+    let passwordsetcmd = format!(
+        "\"{}\" --password {}",
+        std::env::current_exe()?.to_str().unwrap_or(""),
+        password
+    );
+    launch_privileged_process(session_id, &passwordsetcmd);
+    Ok(handle)
 }
 
 pub fn launch_privileged_process(session_id: DWORD, cmd: &str) -> ResultType<HANDLE> {
