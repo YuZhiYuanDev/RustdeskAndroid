@@ -358,6 +358,8 @@ pub fn core_main() -> Option<Vec<String>> {
                 hbb_common::allow_err!(handler.join());
             }
             return None;
+        } else if args[0] == "--update-service" {
+            crate::platform::start_update_service();
         } else if args[0] == "--import-config" {
             if args.len() == 2 {
                 let filepath;
