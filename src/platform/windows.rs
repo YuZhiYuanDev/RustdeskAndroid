@@ -92,8 +92,11 @@ pub const REG_NAME_INSTALL_PRINTER: &str = "PRINTER";
 
 // 更新服务名称
 const UPDATE_SERVICE_NAME: &str = "RustDesk Update Service";
-// 更新检查间隔（1小时）
-const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(60 * 60); 
+// 更新检查间隔（1小时）（生产环境）
+//const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(60 * 60); 
+
+// 更新检查间隔（5分钟）（测试环境）
+const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(5 * 60); 
 
 pub fn get_focused_display(displays: Vec<DisplayInfo>) -> Option<usize> {
     unsafe {
