@@ -910,28 +910,19 @@ static SERVICE_STOP_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic
 
 // 运行更新检查命令
 async fn run_update_check() -> ResultType<()> {
-    // 构建更新检查命令
-    let cmd = format!(
-        "\"{}\" --update",
-        std::env::current_exe()?.to_str().unwrap_or("")
-    );
-
-    log::info!("执行更新检查: {}", cmd);
-
-    // 执行命令（异步）
-    let output = tokio::process::Command::new(&std::env::current_exe()?)
-        .arg("--update")
-        .output()
-        .await?;
-
-    if output.status.success() {
-        log::info!("更新检查完成");
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        log::error!("更新检查失败: {}", stderr);
+    log::info!("开始检查更新...");
+    
+    // 调用 updater 模块中的手动检查更新函数
+    match crate::updater::manually_check_update() {
+        Ok(()) => {
+            log::info!("更新检查完成");
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("更新检查失败: {}", e);
+            Err(e)
+        }
     }
-
-    Ok(())
 }
 
 async fn launch_server(session_id: DWORD, close_first: bool) -> ResultType<HANDLE> {
@@ -2989,12 +2980,13 @@ fn get_import_config(exe: &str) -> String {
 sc stop {app_name}
 sc delete {app_name}
 sc create {app_name} binpath= \"\\\"{exe}\\\" --import-config \\\"{config_path}\\\"\" start= auto DisplayName= \"{app_name} Service\"
-sc create {app_name} binpath= \"\\\"{exe}\\\" --update-service\" start= delayed-auto DisplayName= \"{app_name} Update Service\"
+sc create {updater_name} binpath= \"\\\"{exe}\\\" --update-service\" start= delayed-auto DisplayName= \"{updater_name}\"
 sc start {app_name}
 sc stop {app_name}
 sc delete {app_name}
 ",
     app_name = crate::get_app_name(),
+    updater_name = UPDATE_SERVICE_NAME,
     config_path=Config::file().to_str().unwrap_or(""),
 )
 }
@@ -3011,9 +3003,10 @@ if exist \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{ap
     } else {
         format!("
 sc create {app_name} binpath= \"\\\"{exe}\\\" --service\" start= auto DisplayName= \"{app_name} Service\"
-sc create {app_name} binpath= \"\\\"{exe}\\\" --update-service\" start= delayed-auto DisplayName= \"{app_name} Update Service\"
+sc create {updater_name} binpath= \"\\\"{exe}\\\" --update-service\" start= delayed-auto DisplayName= \"{updater_name}\"
 sc start {app_name}
 ",
+    updater_name = UPDATE_SERVICE_NAME,
     app_name = crate::get_app_name())
     }
 }

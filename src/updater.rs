@@ -39,7 +39,6 @@ pub fn start_auto_update() {
 }
 
 // 手动触发软件更新检查
-#[allow(dead_code)]
 pub fn manually_check_update() -> ResultType<()> {
     let sender = TX_MSG.lock().unwrap();
     sender.send(UpdateMsg::CheckUpdate)?; // 发送CheckUpdate消息以手动触发更新检查
