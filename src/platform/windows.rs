@@ -2981,12 +2981,17 @@ fn get_import_config(exe: &str) -> String {
     }
     format!("
 sc stop {app_name}
+sc stop {updater_name}
 sc delete {app_name}
+sc delete {updater_name}
 sc create {app_name} binpath= \"\\\"{exe}\\\" --import-config \\\"{config_path}\\\"\" start= auto DisplayName= \"{app_name} Service\"
 sc create {updater_name} binpath= \"\\\"{exe}\\\" --update-service\" start= delayed-auto DisplayName= \"{updater_name}\"
 sc start {app_name}
+sc start {updater_name}
 sc stop {app_name}
+sc stop {updater_name}
 sc delete {app_name}
+sc delete {updater_name}
 ",
     app_name = crate::get_app_name(),
     updater_name = UPDATE_SERVICE_NAME,
@@ -3008,6 +3013,7 @@ if exist \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{ap
 sc create {app_name} binpath= \"\\\"{exe}\\\" --service\" start= auto DisplayName= \"{app_name} Service\"
 sc create {updater_name} binpath= \"\\\"{exe}\\\" --update-service\" start= delayed-auto DisplayName= \"{updater_name}\"
 sc start {app_name}
+sc start {updater_name}
 ",
     updater_name = UPDATE_SERVICE_NAME,
     app_name = crate::get_app_name())
