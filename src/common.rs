@@ -885,17 +885,41 @@ pub fn check_software_update() {
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn do_check_software_update() -> hbb_common::ResultType<()> {
-    let (request, url) =
-        hbb_common::version_check_request(hbb_common::VER_TYPE_RUSTDESK_CLIENT.to_string());
-    let latest_release_response = create_http_client_async()
-        .post(url)
-        .json(&request)
-        .send()
-        .await?;
-    let bytes = latest_release_response.bytes().await?;
-    let resp: hbb_common::VersionCheckResponse = serde_json::from_slice(&bytes)?;
-    let response_url = resp.url;
-    let latest_release_version = response_url.rsplit('/').next().unwrap_or_default();
+    // 尝试第一种更新方式（原始方式）
+    let result = async {
+        let (request, url) =
+            hbb_common::version_check_request(hbb_common::VER_TYPE_RUSTDESK_CLIENT.to_string());
+        let latest_release_response = create_http_client_async()
+            .post(url)
+            .json(&request)
+            .send()
+            .await?;
+        let bytes = latest_release_response.bytes().await?;
+        let resp: hbb_common::VersionCheckResponse = serde_json::from_slice(&bytes)?;
+        let versionnum = resp.url.rsplit('/').next().unwrap_or_default().to_owned();
+        Ok::<_, hbb_common::anyhow::Error>((resp.url, versionnum))
+    }.await;
+
+    let (response_url, latest_release_version) = match result {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!("Failed to check update via primary method: {:?}, trying backup method", e);
+            
+            // 第二种方式：访问Gitee获取最新版本
+            let response = create_http_client_async()
+                .get("https://gitee.com/ffishh/rustdesk/releases/latest")
+                .send()
+                .await?;
+            
+            let final_url = response.url().clone();
+            let version = final_url.path_segments()
+                .and_then(|segments| segments.last())
+                .unwrap_or_default()
+                .to_owned();
+            
+            (final_url.to_string(), version)
+        }
+    };
 
     if get_version_number(&latest_release_version) > get_version_number(crate::VERSION) {
         #[cfg(feature = "flutter")]
