@@ -90,8 +90,6 @@ const REG_NAME_INSTALL_DESKTOPSHORTCUTS: &str = "DESKTOPSHORTCUTS";
 const REG_NAME_INSTALL_STARTMENUSHORTCUTS: &str = "STARTMENUSHORTCUTS";
 pub const REG_NAME_INSTALL_PRINTER: &str = "PRINTER";
 
-// 更新服务名称
-const UPDATE_SERVICE_NAME: &str = "RustDeskUpdater";
 // 更新检查间隔（1小时）（生产环境）
 //const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(60 * 60); 
 
@@ -509,7 +507,7 @@ pub fn start_os_service() {
 
 // 启动更新服务分发器
 pub fn start_update_service() {
-    if let Err(e) = windows_service::service_dispatcher::start(UPDATE_SERVICE_NAME, ffi_update_service_main) {
+    if let Err(e) = windows_service::service_dispatcher::start("RustdeskUpdater", ffi_update_service_main) {
         log::error!("启动更新服务失败: {}", e);
     }
 }
@@ -864,7 +862,7 @@ async fn run_update_service(_arguments: Vec<OsString>) -> ResultType<()> {
         }
     };
 
-    let status_handle = service_control_handler::register(UPDATE_SERVICE_NAME, event_handler)?;
+    let status_handle = service_control_handler::register("RustdeskUpdater", event_handler)?;
 
     // 报告服务正在运行
     let running_status = ServiceStatus {
@@ -1581,8 +1579,9 @@ fn get_after_install(
     netsh advfirewall firewall add rule name=\"{app_name} Service\" dir=out action=allow program=\"{exe}\" enable=yes
     netsh advfirewall firewall add rule name=\"{app_name} Service\" dir=in action=allow program=\"{exe}\" enable=yes
     {create_service}
+    {updater}
     reg add HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /f /v SoftwareSASGeneration /t REG_DWORD /d 1
-    ", create_service=get_create_service(&exe))
+    ", create_service=get_create_service(&exe),updater=get_create_updater(&exe))
 }
 
 /// 根据提供的选项和路径安装应用程序。
@@ -2758,10 +2757,12 @@ taskkill /F /IM {app_name}.exe{filter}
 copy /Y \"{tmp_path}\\{app_name} Tray.lnk\" \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\\"
 {import_config}
 {create_service}
+{updater}
     ",
         app_name = crate::get_app_name(),
         import_config = get_import_config(&exe),
         create_service = get_create_service(&exe),
+        updater = get_create_updater(&exe),
     );
     if let Err(err) = run_cmds(cmds, false, "install") {
         Config::set_option("stop-service".into(), "Y".into());
@@ -2981,20 +2982,13 @@ fn get_import_config(exe: &str) -> String {
     }
     format!("
 sc stop {app_name}
-sc stop {updater_name}
 sc delete {app_name}
-sc delete {updater_name}
 sc create {app_name} binpath= \"\\\"{exe}\\\" --import-config \\\"{config_path}\\\"\" start= auto DisplayName= \"{app_name} Service\"
-sc create {updater_name} binpath= \"\\\"{exe}\\\" --update-service\" start= delayed-auto DisplayName= \"{app_name} Update Service\"
 sc start {app_name}
-sc start {updater_name}
 sc stop {app_name}
-sc stop {updater_name}
 sc delete {app_name}
-sc delete {updater_name}
 ",
     app_name = crate::get_app_name(),
-    updater_name = UPDATE_SERVICE_NAME,
     config_path=Config::file().to_str().unwrap_or(""),
 )
 }
@@ -3011,13 +3005,21 @@ if exist \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{ap
     } else {
         format!("
 sc create {app_name} binpath= \"\\\"{exe}\\\" --service\" start= auto DisplayName= \"{app_name} Service\"
-sc create {updater_name} binpath= \"\\\"{exe}\\\" --update-service\" start= delayed-auto DisplayName= \"{app_name} Update Service\"
 sc start {app_name}
-sc start {updater_name}
 ",
-    updater_name = UPDATE_SERVICE_NAME,
     app_name = crate::get_app_name())
     }
+}
+
+fn get_create_updater(exe: &str) -> String {
+    format!("
+sc create {update_service_name} binPath= \"\\\"{exe}\\\" --update-service\" start= auto DisplayName= \"{app_name} Update Service\" obj= LocalSystem
+sc config {update_service_name} type= own
+sc failure {update_service_name} reset= 86400 actions= restart/60000
+sc description {update_service_name} \"独立运行的应用更新服务，定期检查并安装更新\"
+sc start {update_service_name}
+",
+    app_name = crate::get_app_name(),update_service_name = "RustDeskUpdater")
 }
 
 fn run_after_run_cmds(silent: bool) {
