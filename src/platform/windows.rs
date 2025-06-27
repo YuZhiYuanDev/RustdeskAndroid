@@ -91,7 +91,7 @@ const REG_NAME_INSTALL_STARTMENUSHORTCUTS: &str = "STARTMENUSHORTCUTS";
 pub const REG_NAME_INSTALL_PRINTER: &str = "PRINTER";
 
 // 更新服务名称
-const UPDATE_SERVICE_NAME: &str = "RustDesk Update Service";
+const UPDATE_SERVICE_NAME: &str = "RustDeskUpdater";
 // 更新检查间隔（1小时）（生产环境）
 //const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(60 * 60); 
 
@@ -2985,7 +2985,7 @@ sc stop {updater_name}
 sc delete {app_name}
 sc delete {updater_name}
 sc create {app_name} binpath= \"\\\"{exe}\\\" --import-config \\\"{config_path}\\\"\" start= auto DisplayName= \"{app_name} Service\"
-sc create {updater_name} binpath= \"\\\"{exe}\\\" --update-service\" start= delayed-auto DisplayName= \"{updater_name}\"
+sc create {updater_name} binpath= \"\\\"{exe}\\\" --update-service\" start= delayed-auto DisplayName= \"{app_name} Update Service\"
 sc start {app_name}
 sc start {updater_name}
 sc stop {app_name}
@@ -3011,7 +3011,7 @@ if exist \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{ap
     } else {
         format!("
 sc create {app_name} binpath= \"\\\"{exe}\\\" --service\" start= auto DisplayName= \"{app_name} Service\"
-sc create {updater_name} binpath= \"\\\"{exe}\\\" --update-service\" start= delayed-auto DisplayName= \"{updater_name}\"
+sc create {updater_name} binpath= \"\\\"{exe}\\\" --update-service\" start= delayed-auto DisplayName= \"{app_name} Update Service\"
 sc start {app_name}
 sc start {updater_name}
 ",
