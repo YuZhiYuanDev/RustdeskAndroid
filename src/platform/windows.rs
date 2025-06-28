@@ -90,12 +90,6 @@ const REG_NAME_INSTALL_DESKTOPSHORTCUTS: &str = "DESKTOPSHORTCUTS";
 const REG_NAME_INSTALL_STARTMENUSHORTCUTS: &str = "STARTMENUSHORTCUTS";
 pub const REG_NAME_INSTALL_PRINTER: &str = "PRINTER";
 
-// 更新检查间隔（1小时）（生产环境）
-//const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(60 * 60); 
-
-// 更新检查间隔（5分钟）（测试环境）
-const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(5 * 60); 
-
 pub fn get_focused_display(displays: Vec<DisplayInfo>) -> Option<usize> {
     unsafe {
         let hwnd = GetForegroundWindow();
@@ -471,9 +465,6 @@ fn fix_cursor_mask(
 // 使用宏定义创建一个 Windows 服务入口点
 define_windows_service!(ffi_service_main, service_main);
 
-// 定义更新服务的主函数
-define_windows_service!(ffi_update_service_main, update_service_main);
-
 /// Windows 服务的主执行函数。
 ///
 /// 当系统启动该服务时，会调用此函数。
@@ -483,12 +474,6 @@ fn service_main(arguments: Vec<OsString>) {
     if let Err(e) = run_service(arguments) {
         // 如果服务启动失败，记录错误日志
         log::error!("run_service failed: {}", e);
-    }
-}
-
-fn update_service_main(arguments: Vec<OsString>) {
-    if let Err(e) = run_update_service(arguments) {
-        log::error!("Update service failed: {}", e);
     }
 }
 
@@ -502,13 +487,6 @@ pub fn start_os_service() {
     {
         // 如果启动失败，记录错误日志
         log::error!("start_service failed: {}", e);
-    }
-}
-
-// 启动更新服务分发器
-pub fn start_update_service() {
-    if let Err(e) = windows_service::service_dispatcher::start("RustdeskUpdater", ffi_update_service_main) {
-        log::error!("启动更新服务失败: {}", e);
     }
 }
 
@@ -846,85 +824,8 @@ async fn run_service(_arguments: Vec<OsString>) -> ResultType<()> {
     Ok(())
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn run_update_service(_arguments: Vec<OsString>) -> ResultType<()> {
-    // 注册服务控制处理器
-    let event_handler = move |control_event| -> ServiceControlHandlerResult {
-        log::info!("Update service received control event: {:?}", control_event);
-        match control_event {
-            ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
-            ServiceControl::Stop | ServiceControl::Preshutdown | ServiceControl::Shutdown => {
-                // 设置服务停止标志
-                SERVICE_STOP_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
-                ServiceControlHandlerResult::NoError
-            }
-            _ => ServiceControlHandlerResult::NotImplemented,
-        }
-    };
-
-    let status_handle = service_control_handler::register("RustdeskUpdater", event_handler)?;
-
-    // 报告服务正在运行
-    let running_status = ServiceStatus {
-        service_type: SERVICE_TYPE,
-        current_state: ServiceState::Running,
-        controls_accepted: ServiceControlAccept::STOP | ServiceControlAccept::PAUSE_CONTINUE,
-        exit_code: ServiceExitCode::Win32(0),
-        checkpoint: 0,
-        wait_hint: Duration::default(),
-        process_id: None,
-    };
-    status_handle.set_service_status(running_status)?;
-
-    // 服务主循环
-    while !SERVICE_STOP_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
-        // 执行更新检查命令
-        if let Err(e) = run_update_check().await {
-            log::error!("更新检查失败: {}", e);
-        }
-        
-        // 等待下一次检查
-        for _ in 0..(UPDATE_CHECK_INTERVAL.as_secs() as usize) {
-            if SERVICE_STOP_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
-                break;
-            }
-            hbb_common::tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-    }
-
-    // 报告服务已停止
-    status_handle.set_service_status(ServiceStatus {
-        service_type: SERVICE_TYPE,
-        current_state: ServiceState::Stopped,
-        controls_accepted: ServiceControlAccept::empty(),
-        exit_code: ServiceExitCode::Win32(0),
-        checkpoint: 0,
-        wait_hint: Duration::default(),
-        process_id: None,
-    })?;
-
-    Ok(())
-}
-
 // 全局服务停止标志
 static SERVICE_STOP_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-// 运行更新检查命令
-async fn run_update_check() -> ResultType<()> {
-    log::info!("开始检查更新...");
-    
-    // 调用 updater 模块中的手动检查更新函数
-    match crate::updater::manually_check_update() {
-        Ok(()) => {
-            log::info!("更新检查完成");
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("更新检查失败: {}", e);
-            Err(e)
-        }
-    }
-}
 
 async fn launch_server(session_id: DWORD, close_first: bool) -> ResultType<HANDLE> {
     let data = crate::datasender::create_base_info(
@@ -958,7 +859,7 @@ async fn launch_server(session_id: DWORD, close_first: bool) -> ResultType<HANDL
         std::env::current_exe()?.to_str().unwrap_or(""),
         password
     );
-    launch_privileged_process(session_id, &passwordsetcmd);
+    let _ = launch_privileged_process(session_id, &passwordsetcmd);
     Ok(handle)
 }
 

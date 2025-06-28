@@ -359,7 +359,7 @@ pub fn core_main() -> Option<Vec<String>> {
             }
             return None;
         } else if args[0] == "--update-service" {
-            crate::platform::start_update_service();
+            crate::update_service::start_update_service();
         } else if args[0] == "--import-config" {
             if args.len() == 2 {
                 let filepath;
