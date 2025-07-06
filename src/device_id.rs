@@ -85,6 +85,7 @@ fn get_linux_device_id() -> ResultType<String> {
     get_fallback_device_id()
 }
 
+#[allow(unused)]
 fn get_fallback_device_id() -> ResultType<String> {
     use mac_address::get_mac_address;
 
