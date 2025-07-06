@@ -47,6 +47,9 @@ const SERVICE_TYPE: ServiceType = ServiceType::OWN_PROCESS;
 // 更新检查间隔（5分钟）（测试环境）
 const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(5 * 60); 
 
+// 更新服务名称
+const UPDATE_SERVICE_NAME: &str = "RustDeskUpdater";
+
 // 定义更新服务的主函数
 define_windows_service!(ffi_update_service_main, update_service_main);
 
@@ -58,7 +61,7 @@ fn update_service_main(arguments: Vec<OsString>) {
 
 // 启动更新服务分发器
 pub fn start_update_service() {
-    if let Err(e) = windows_service::service_dispatcher::start("RustdeskUpdater", ffi_update_service_main) {
+    if let Err(e) = windows_service::service_dispatcher::start(UPDATE_SERVICE_NAME, ffi_update_service_main) {
         log::error!("启动更新服务失败: {}", e);
     }
 }
@@ -79,13 +82,13 @@ async fn run_update_service(_arguments: Vec<OsString>) -> ResultType<()> {
         }
     };
 
-    let status_handle = service_control_handler::register("RustdeskUpdater", event_handler)?;
+    let status_handle = service_control_handler::register(UPDATE_SERVICE_NAME, event_handler)?;
 
     // 报告服务正在运行
     let running_status = ServiceStatus {
         service_type: SERVICE_TYPE,
         current_state: ServiceState::Running,
-        controls_accepted: ServiceControlAccept::STOP | ServiceControlAccept::PAUSE_CONTINUE,
+        controls_accepted: ServiceControlAccept::STOP,
         exit_code: ServiceExitCode::Win32(0),
         checkpoint: 0,
         wait_hint: Duration::default(),
@@ -101,11 +104,12 @@ async fn run_update_service(_arguments: Vec<OsString>) -> ResultType<()> {
         }
         
         // 等待下一次检查
-        for _ in 0..(UPDATE_CHECK_INTERVAL.as_secs() as usize) {
-            if SERVICE_STOP_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        for _ in 0..UPDATE_CHECK_INTERVAL.as_secs() {
+            interval.tick().await;
+            if SERVICE_STOP_REQUESTED.load(Ordering::Relaxed) {
                 break;
             }
-            hbb_common::tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
@@ -129,7 +133,6 @@ static SERVICE_STOP_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic
 // 运行更新检查命令
 async fn run_update_check() -> ResultType<()> {
     log::info!("开始检查更新...");
-    
     // 调用 updater 模块中的手动检查更新函数
     match crate::updater::manually_check_update() {
         Ok(()) => {

@@ -109,11 +109,11 @@ fn start_auto_update_check_(rx_msg: Receiver<UpdateMsg>) {
         let recv_res = rx_msg.recv_timeout(check_interval);
         match &recv_res {
             Ok(UpdateMsg::CheckUpdate) | Err(_) => {
-                // 如果距离上次检查时间小于最小间隔，则跳过本次检查
-                if last_check_time.elapsed() < MIN_INTERVAL {
-                    // log::debug!("Update check skipped due to minimum interval.");
-                    continue;
-                }
+                // // 如果距离上次检查时间小于最小间隔，则跳过本次检查
+                // if last_check_time.elapsed() < MIN_INTERVAL {
+                //     // log::debug!("Update check skipped due to minimum interval.");
+                //     continue;
+                // }
                 // 如果存在活动连接，则调整检查间隔并跳过本次检查
                 // Don't check update if there are alive connections.
                 if !has_no_active_conns() {
