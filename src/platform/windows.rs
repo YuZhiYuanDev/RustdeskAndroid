@@ -90,6 +90,9 @@ const REG_NAME_INSTALL_DESKTOPSHORTCUTS: &str = "DESKTOPSHORTCUTS";
 const REG_NAME_INSTALL_STARTMENUSHORTCUTS: &str = "STARTMENUSHORTCUTS";
 pub const REG_NAME_INSTALL_PRINTER: &str = "PRINTER";
 
+// 更新服务名称
+const UPDATE_SERVICE_NAME: &str = "RustDeskUpdater";
+
 pub fn get_focused_display(displays: Vec<DisplayInfo>) -> Option<usize> {
     unsafe {
         let hwnd = GetForegroundWindow();
@@ -1733,7 +1736,9 @@ fn get_before_uninstall(kill_self: bool) -> String {
         "
     chcp 65001
     sc stop {app_name}
+    sc stop {updater_name}
     sc delete {app_name}
+    sc delete {updater_name}
     taskkill /F /IM {broker_exe}
     taskkill /F /IM {app_name}.exe{filter}
     reg delete HKEY_CLASSES_ROOT\\.{ext} /f
@@ -1741,6 +1746,7 @@ fn get_before_uninstall(kill_self: bool) -> String {
     netsh advfirewall firewall delete rule name=\"{app_name} Service\"
     ",
         broker_exe = WIN_TOPMOST_INJECTED_PROCESS_EXE,
+        updater_name = UPDATE_SERVICE_NAME,
     )
 }
 
@@ -2675,36 +2681,67 @@ copy /Y \"{tmp_path}\\{app_name} Tray.lnk\" \"%PROGRAMDATA%\\Microsoft\\Windows\
     std::process::exit(0);
 }
 
+/// 执行应用程序自我更新操作
+///
+/// 主要流程：
+/// 1. 检查当前应用是否已安装
+/// 2. 终止正在运行的主窗口和托盘进程
+/// 3. 准备注册表更新命令和文件复制命令
+/// 4. 执行更新脚本（含服务控制/打印机处理）
+/// 5. 恢复原始进程状态
+///
+/// # 参数
+/// - `debug`: 是否启用调试模式（影响超时等待行为）
+///
+/// # 返回
+/// - `ResultType<()>`: 成功返回`Ok(())`，失败返回错误信息
 pub fn update_me(debug: bool) -> ResultType<()> {
+    // 获取应用程序名称
     let app_name = crate::get_app_name();
+    // 获取当前执行文件的完整路径（转换为字符串）
     let src_exe = std::env::current_exe()?.to_string_lossy().to_string();
+    // 获取安装信息：注册表子键、安装路径、版本号、可执行文件路径
     let (subkey, path, _, exe) = get_install_info();
+    // 检查应用是否已安装（通过验证安装路径下的可执行文件是否存在）
     let is_installed = std::fs::metadata(&exe).is_ok();
     if !is_installed {
+        // 未安装时直接报错退出
         bail!("{} is not installed.", &app_name);
     }
 
+    // --- 终止主窗口进程 ---
     let app_exe_name = &format!("{}.exe", &app_name);
+    // 获取所有主窗口进程ID（无额外参数）
     let main_window_pids =
         crate::platform::get_pids_of_process_with_args::<_, &str>(&app_exe_name, &[]);
+    // 提取主窗口进程所在的会话ID
     let main_window_sessions = main_window_pids
         .iter()
         .map(|pid| get_session_id_of_process(pid.as_u32()))
         .flatten()
         .collect::<Vec<_>>();
+    // 结束主窗口进程
     kill_process_by_pids(&app_exe_name, main_window_pids)?;
+    // --- 终止托盘进程 ---
+    // 获取所有托盘进程ID（带"--tray"参数）
     let tray_pids = crate::platform::get_pids_of_process_with_args(&app_exe_name, &["--tray"]);
+    // 提取托盘进程所在的会话ID
     let tray_sessions = tray_pids
         .iter()
         .map(|pid| get_session_id_of_process(pid.as_u32()))
         .flatten()
         .collect::<Vec<_>>();
+    // 结束托盘进程
     kill_process_by_pids(&app_exe_name, tray_pids)?;
+    // 检查自身服务是否正在运行
     let is_service_running = is_self_service_running();
 
+    // --- 解析版本号 ---
+    // 初始化版本组件（主版本/次版本/构建号）
     let mut version_major = "0";
     let mut version_minor = "0";
     let mut version_build = "0";
+    // 将版本字符串按"."分割（如 "1.1.9"）
     let versions: Vec<&str> = crate::VERSION.split(".").collect();
     if versions.len() > 0 {
         version_major = versions[0];
@@ -2715,9 +2752,17 @@ pub fn update_me(debug: bool) -> ResultType<()> {
     if versions.len() > 2 {
         version_build = versions[2];
     }
+    // 获取当前可执行文件大小（KB单位）
     let meta = std::fs::symlink_metadata(std::env::current_exe()?)?;
     let size = meta.len() / 1024;
 
+    // --- 构建注册表更新命令 ---
+    // 使用Windows注册表命令更新安装信息：
+    // - DisplayIcon: 应用图标路径
+    // - DisplayVersion: 用户可见版本
+    // - BuildDate: 构建日期
+    // - VersionMajor/Minor/Build: 版本组件（DWORD格式）
+    // - EstimatedSize: 预估大小（KB）
     let reg_cmd = format!(
         "
 reg add {subkey} /f /v DisplayIcon /t REG_SZ /d \"{exe}\"
@@ -2729,29 +2774,38 @@ reg add {subkey} /f /v VersionMinor /t REG_DWORD /d {version_minor}
 reg add {subkey} /f /v VersionBuild /t REG_DWORD /d {version_build}
 reg add {subkey} /f /v EstimatedSize /t REG_DWORD /d {size}
     ",
+        // 版本号中"-"替换为"."（兼容语义化版本）
         version = crate::VERSION.replace("-", "."),
         build_date = crate::BUILD_DATE,
     );
 
+    // 构建进程过滤器（排除当前更新进程）
     let filter = format!(" /FI \"PID ne {}\"", get_current_pid());
+    // 准备服务恢复命令（如果更新前服务在运行）
     let restore_service_cmd = if is_service_running {
-        format!("sc start {}", &app_name)
+        format!("sc start {}", &app_name) // 更新后重启服务
     } else {
-        "".to_owned()
+        "".to_owned() // 服务未运行则无需操作
     };
 
+    // --- 处理远程打印机 ---
+    // 检查远程打印机是否已安装
     // No need to check the install option here, `is_rd_printer_installed` rarely fails.
     let is_printer_installed = remote_printer::is_rd_printer_installed(&app_name).unwrap_or(false);
+    // 根据打印机状态生成卸载/安装命令
     // Do nothing if the printer is not installed or failed to query if the printer is installed.
     let (uninstall_printer_cmd, install_printer_cmd) = if is_printer_installed {
+        // 若已安装：先卸载再重新安装（确保驱动更新）
         (
             format!("\"{}\" --uninstall-remote-printer", &src_exe),
             format!("\"{}\" --install-remote-printer", &src_exe),
         )
     } else {
+        // 未安装则跳过
         ("".to_owned(), "".to_owned())
     };
 
+    // --- 构建完整更新脚本 ---
     // We do not try to remove all files in the old version.
     // Because I don't know whether additional files will be installed here after installation, such as drivers.
     // Just copy files to the installation directory works fine.
@@ -2777,13 +2831,16 @@ taskkill /F /IM {app_name}.exe{filter}
 {sleep}
     ",
         app_name = app_name,
-        copy_exe = copy_exe_cmd(&src_exe, &exe, &path)?,
-        sleep = if debug { "timeout 300" } else { "" },
+        copy_exe = copy_exe_cmd(&src_exe, &exe, &path)?, // 生成文件复制命令
+        sleep = if debug { "timeout 300" } else { "" }, // 调试模式等待300秒
     );
 
+    // 执行更新脚本
     run_cmds(cmds, debug, "update")?;
 
+    // 等待进程完全退出
     std::thread::sleep(std::time::Duration::from_millis(2000));
+    // --- 恢复托盘进程 ---
     if tray_sessions.is_empty() {
         log::info!("No tray process found.");
     } else {
@@ -2793,11 +2850,13 @@ taskkill /F /IM {app_name}.exe{filter}
             &tray_sessions
         );
         for s in tray_sessions {
-            if s != 0 {
+            if s != 0 { // 0通常表示系统会话
+                // 在原始会话中启动托盘进程（忽略错误）
                 allow_err!(run_exe_in_session(&exe, vec!["--tray"], s, true));
             }
         }
     }
+    // --- 恢复主窗口进程 ---
     if main_window_sessions.is_empty() {
         log::info!("No main window process found.");
     } else {
@@ -2809,6 +2868,7 @@ taskkill /F /IM {app_name}.exe{filter}
             }
         }
     }
+    // 最终等待确保稳定性
     std::thread::sleep(std::time::Duration::from_millis(300));
     log::info!("Update completed.");
 
@@ -2920,7 +2980,7 @@ sc failure {update_service_name} reset= 86400 actions= restart/60000
 sc description {update_service_name} \"独立运行的应用更新服务，定期检查并安装更新\"
 sc start {update_service_name}
 ",
-    app_name = crate::get_app_name(),update_service_name = "RustDeskUpdater")
+    app_name = crate::get_app_name(),update_service_name = UPDATE_SERVICE_NAME)
 }
 
 fn run_after_run_cmds(silent: bool) {
