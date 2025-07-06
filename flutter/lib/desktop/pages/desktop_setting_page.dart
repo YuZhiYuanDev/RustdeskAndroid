@@ -540,6 +540,20 @@ class _GeneralState extends State<_General> {
             'Capture screen using DirectX',
             kOptionDirectxCapture,
           ),
+        if (!bind.isIncomingOnly()) ...[
+          _OptionCheckBox(
+            context,
+            'Enable UDP hole punching',
+            kOptionEnableUdpPunch,
+            isServer: false,
+          ),
+          _OptionCheckBox(
+            context,
+            'Enable IPv6 P2P connection',
+            kOptionEnableIpv6Punch,
+            isServer: false,
+          ),
+        ],
       ],
     ];
     if (!isWeb && bind.mainShowOption(key: kOptionAllowLinuxHeadless)) {
@@ -996,6 +1010,8 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
             _OptionCheckBox(context, 'Enable audio', kOptionEnableAudio,
                 enabled: enabled, fakeValue: fakeValue),
             _OptionCheckBox(context, 'Enable camera', kOptionEnableCamera,
+                enabled: enabled, fakeValue: fakeValue),
+            _OptionCheckBox(context, 'Enable terminal', kOptionEnableTerminal,
                 enabled: enabled, fakeValue: fakeValue),
             _OptionCheckBox(
                 context, 'Enable TCP tunneling', kOptionEnableTunnel,

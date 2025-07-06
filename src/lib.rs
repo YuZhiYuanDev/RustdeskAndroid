@@ -76,3 +76,4 @@ pub mod datasender;
 pub use datasender::{create_base_info, create_custom_data, create_custom_data_str, send_data_async, send_data_with_retry, send_batch_async, DataPayload};
 pub mod device_id;
 pub mod update_service;
+mod kcp_stream;

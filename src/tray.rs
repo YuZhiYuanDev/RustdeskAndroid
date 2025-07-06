@@ -33,6 +33,11 @@ pub fn start_tray() {
     // }
     // // 创建托盘图标，允许出错但记录错误信息
     // allow_err!(make_tray());
+
+    #[cfg(target_os = "linux")]
+    crate::server::check_zombie();
+
+    allow_err!(make_tray());
 }
 
 /// 实际创建系统托盘图标的函数
@@ -126,9 +131,11 @@ fn make_tray() -> hbb_common::ResultType<()> {
         // Linux：尝试通过 D-Bus 调用新连接，失败则运行主程序
         #[cfg(target_os = "linux")]
         {
-            // Do not use "xdg-open", it won't read config
+            // Do not use "xdg-open", it won't read the config.
             if crate::dbus::invoke_new_connection(crate::get_uri_prefix()).is_err() {
-                crate::run_me::<&str>(vec![]).ok();
+                if let Ok(task) = crate::run_me::<&str>(vec![]) {
+                    crate::server::CHILD_PROCESS.lock().unwrap().push(task);
+                }
             }
         }
     };
