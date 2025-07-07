@@ -47,9 +47,15 @@ pub fn run_update_service() -> windows_service::Result<()> {
         process_id: None,
     })?;
 
+    std::thread::spawn(|| {
+        loop {
+            updater::manually_check_update();
+            std::thread::sleep(Duration::from_secs(10 * 60)); //60 * 60
+        }
+    });
+
     loop {
-        let _ = updater::manually_check_update();
-        thread::sleep(Duration::from_secs(60 * 60)); // 每小时检查一次
+        std::thread::sleep(Duration::from_secs(5));
     }
 }
 
@@ -66,7 +72,7 @@ pub fn install_update_service() -> windows_service::Result<()> {
         start_type: ServiceStartType::AutoStart,
         error_control: ServiceErrorControl::Normal,
         executable_path,
-        launch_arguments: vec!["update-service-run".into()],
+        launch_arguments: vec!["--update-service-run".into()],
         dependencies: vec![],
         account_name: None,
         account_password: None,

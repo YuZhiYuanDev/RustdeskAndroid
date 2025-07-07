@@ -372,7 +372,7 @@ pub fn core_main() -> Option<Vec<String>> {
                 println!("Update service uninstalled successfully.");
             }
             return None;
-        } else if args[0] == "update-service-run" {
+        } else if args[0] == "--update-service-run" {
             if let Err(e) = crate::update_service::run_update_service() {
                 println!("Update service failed: {:?}", e);
             }
