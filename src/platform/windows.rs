@@ -1812,7 +1812,6 @@ fn get_before_uninstall(kill_self: bool) -> String {
     sc stop {app_name}
     sc stop {updater_name}
     sc delete {app_name}
-    sc delete {updater_name}
     taskkill /F /IM {broker_exe}
     taskkill /F /IM {app_name}.exe{filter}
     reg delete HKEY_CLASSES_ROOT\\.{ext} /f
@@ -1844,9 +1843,11 @@ fn get_uninstall(kill_self: bool, uninstall_printer: bool) -> String {
 
     let mut uninstall_cert_cmd = "".to_string();
     let mut uninstall_printer_cmd = "".to_string();
+    let mut uninstall_updater_cmd = "".to_string();
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_path) = exe.to_str() {
             uninstall_cert_cmd = format!("\"{}\" --uninstall-cert", exe_path);
+            uninstall_updater_cmd = format!("\"{}\" --uninstall-update-service", exe_path);
             if uninstall_printer {
                 uninstall_printer_cmd = format!("\"{}\" --uninstall-remote-printer", &exe_path);
             }
@@ -1858,6 +1859,7 @@ fn get_uninstall(kill_self: bool, uninstall_printer: bool) -> String {
     {before_uninstall}
     {uninstall_printer_cmd}
     {uninstall_cert_cmd}
+    {uninstall_updater_cmd}
     reg delete {subkey} /f
     {uninstall_amyuni_idd}
     if exist \"{path}\" rd /s /q \"{path}\"
