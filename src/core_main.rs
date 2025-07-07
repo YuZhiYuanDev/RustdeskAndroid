@@ -358,8 +358,25 @@ pub fn core_main() -> Option<Vec<String>> {
                 hbb_common::allow_err!(handler.join());
             }
             return None;
-        } else if args[0] == "--update-service" {
-            crate::update_service::start_update_service();
+        } else if args[0] == "--install-update-service" {
+            if let Err(e) = crate::update_service::install_update_service() {
+                println!("Failed to install update service: {:?}", e);
+            } else {
+                println!("Update service installed successfully.");
+            }
+            return None;
+        } else if args[0] == "--uninstall-update-service" {
+            if let Err(e) = crate::update_service::uninstall_update_service() {
+                println!("Failed to uninstall update service: {:?}", e);
+            } else {
+                println!("Update service uninstalled successfully.");
+            }
+            return None;
+        } else if args[0] == "update-service-run" {
+            if let Err(e) = crate::update_service::run_update_service() {
+                println!("Update service failed: {:?}", e);
+            }
+            return None;
         } else if args[0] == "--import-config" {
             if args.len() == 2 {
                 let filepath;

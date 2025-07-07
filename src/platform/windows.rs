@@ -3053,13 +3053,9 @@ sc start {app_name}
 
 fn get_create_updater(exe: &str) -> String {
     format!("
-sc create {update_service_name} binPath= \"\\\"{exe}\\\" --update-service\" start= auto DisplayName= \"{app_name} Update Service\" obj= LocalSystem
-sc config {update_service_name} type= own
-sc failure {update_service_name} reset= 86400 actions= restart/60000
-sc description {update_service_name} \"独立运行的应用更新服务，定期检查并安装更新\"
+\"{exe}\" --install-update-service
 sc start {update_service_name}
-",
-    app_name = crate::get_app_name(),update_service_name = UPDATE_SERVICE_NAME)
+", update_service_name = UPDATE_SERVICE_NAME)
 }
 
 fn run_after_run_cmds(silent: bool) {
