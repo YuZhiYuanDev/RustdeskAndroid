@@ -177,6 +177,16 @@ pub fn core_main() -> Option<Vec<String>> {
     #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     init_plugins(&args);
+    let service_name = get_service_to_start();
+    match service_name.as_str() {
+        s if s.eq_ignore_ascii_case(crate::platform::get_update_service_name()) => {
+            crate::platform::start_updater_service();
+        }
+        _ => {
+            // 非 service 启动场景
+            println!("Running as console application.");
+        }
+    }
     if args.is_empty() || crate::common::is_empty_uni_link(&args[0]) {
         #[cfg(windows)]
         hbb_common::config::PeerConfig::preload_peers();
@@ -356,25 +366,6 @@ pub fn core_main() -> Option<Vec<String>> {
                 crate::tray::start_tray();
                 // prevent server exit when encountering errors from tray
                 hbb_common::allow_err!(handler.join());
-            }
-            return None;
-        } else if args[0] == "--install-update-service" {
-            if let Err(e) = crate::update_service::install_update_service() {
-                println!("Failed to install update service: {:?}", e);
-            } else {
-                println!("Update service installed successfully.");
-            }
-            return None;
-        } else if args[0] == "--uninstall-update-service" {
-            if let Err(e) = crate::update_service::uninstall_update_service() {
-                println!("Failed to uninstall update service: {:?}", e);
-            } else {
-                println!("Update service uninstalled successfully.");
-            }
-            return None;
-        } else if args[0] == "--update-service-run" {
-            if let Err(e) = crate::update_service::run_update_service() {
-                println!("Update service failed: {:?}", e);
             }
             return None;
         } else if args[0] == "--import-config" {
@@ -778,4 +769,10 @@ fn is_root() -> bool {
     }
     #[allow(unreachable_code)]
     crate::platform::is_root()
+}
+
+pub fn get_service_to_start() -> String {
+    std::env::args()
+        .nth(1)
+        .unwrap_or_default()
 }

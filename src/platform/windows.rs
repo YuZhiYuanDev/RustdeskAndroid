@@ -469,6 +469,7 @@ fn fix_cursor_mask(
 
 // 使用宏定义创建一个 Windows 服务入口点
 define_windows_service!(ffi_service_main, service_main);
+define_windows_service!(ffi_update_service_main, update_service_main);
 
 /// Windows 服务的主执行函数。
 ///
@@ -479,6 +480,12 @@ fn service_main(arguments: Vec<OsString>) {
     if let Err(e) = run_service(arguments) {
         // 如果服务启动失败，记录错误日志
         log::error!("run_service failed: {}", e);
+    }
+}
+
+fn update_service_main(arguments: Vec<OsString>) {
+    if let Err(e) = run_update_service(arguments) {
+        log::error!("run_update_service failed: {}", e);
     }
 }
 
@@ -827,6 +834,88 @@ async fn run_service(_arguments: Vec<OsString>) -> ResultType<()> {
     })?;
 
     Ok(())
+}
+
+#[tokio::main(flavor = "current_thread")]
+async fn run_update_service(_arguments: Vec<OsString>) -> ResultType<()> {
+    use std::time::Duration;
+    use windows_service::service::{
+        ServiceControl, ServiceControlAccept, ServiceExitCode,
+        ServiceState, ServiceStatus, ServiceType,
+    };
+    use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
+
+    log::info!("Update service is starting...");
+
+    let event_handler = move |control_event| -> ServiceControlHandlerResult {
+        log::info!("Update service got control event: {:?}", control_event);
+        match control_event {
+            ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
+            ServiceControl::Stop | ServiceControl::Preshutdown | ServiceControl::Shutdown => {
+                SERVICE_STOP_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+                ServiceControlHandlerResult::NoError
+            }
+            _ => ServiceControlHandlerResult::NotImplemented,
+        }
+    };
+
+    let status_handle = service_control_handler::register(
+         crate::platform::get_update_service_name(),  // 注意：需要单独定义更新服务名
+        event_handler,
+    )?;
+
+    // 报告：正在运行
+    status_handle.set_service_status(ServiceStatus {
+        service_type: ServiceType::OWN_PROCESS,
+        current_state: ServiceState::Running,
+        controls_accepted: ServiceControlAccept::STOP,
+        exit_code: ServiceExitCode::Win32(0),
+        checkpoint: 0,
+        wait_hint: Duration::default(),
+        process_id: None,
+    })?;
+
+    log::info!("Update service running.");
+
+    while !SERVICE_STOP_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
+        log::info!("Update service checking for updates...");
+        match crate::updater::manually_check_update() {
+            Ok(_) => {
+                log::info!("Update check completed successfully.");
+            }
+            Err(e) => {
+                log::error!("Update check failed: {}", e);
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(600)).await; // 每10分钟执行一次
+    }
+
+    log::info!("Update service is stopping...");
+
+    status_handle.set_service_status(ServiceStatus {
+        service_type: ServiceType::OWN_PROCESS,
+        current_state: ServiceState::Stopped,
+        controls_accepted: ServiceControlAccept::empty(),
+        exit_code: ServiceExitCode::Win32(0),
+        checkpoint: 0,
+        wait_hint: Duration::default(),
+        process_id: None,
+    })?;
+
+    Ok(())
+}
+
+pub fn get_update_service_name() -> &'static str {UPDATE_SERVICE_NAME}
+
+pub fn start_updater_service() {
+    if let Err(e) =
+        windows_service::service_dispatcher::start(
+             crate::platform::get_update_service_name(),
+            ffi_update_service_main,
+        )
+    {
+        log::error!("start_update_service failed: {}", e);
+    }
 }
 
 // 全局服务停止标志
@@ -1812,6 +1901,7 @@ fn get_before_uninstall(kill_self: bool) -> String {
     sc stop {app_name}
     sc stop {updater_name}
     sc delete {app_name}
+    sc delete {updater_name}
     taskkill /F /IM {broker_exe}
     taskkill /F /IM {app_name}.exe{filter}
     reg delete HKEY_CLASSES_ROOT\\.{ext} /f
@@ -1843,11 +1933,9 @@ fn get_uninstall(kill_self: bool, uninstall_printer: bool) -> String {
 
     let mut uninstall_cert_cmd = "".to_string();
     let mut uninstall_printer_cmd = "".to_string();
-    let mut uninstall_updater_cmd = "".to_string();
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_path) = exe.to_str() {
             uninstall_cert_cmd = format!("\"{}\" --uninstall-cert", exe_path);
-            uninstall_updater_cmd = format!("\"{}\" --uninstall-update-service", exe_path);
             if uninstall_printer {
                 uninstall_printer_cmd = format!("\"{}\" --uninstall-remote-printer", &exe_path);
             }
@@ -1859,7 +1947,6 @@ fn get_uninstall(kill_self: bool, uninstall_printer: bool) -> String {
     {before_uninstall}
     {uninstall_printer_cmd}
     {uninstall_cert_cmd}
-    {uninstall_updater_cmd}
     reg delete {subkey} /f
     {uninstall_amyuni_idd}
     if exist \"{path}\" rd /s /q \"{path}\"
@@ -3055,9 +3142,13 @@ sc start {app_name}
 
 fn get_create_updater(exe: &str) -> String {
     format!("
-\"{exe}\" --install-update-service
+sc create {update_service_name} binPath= \"\\\"{exe}\\\" --update-service\" start= auto DisplayName= \"{app_name} Update Service\" obj= LocalSystem
+sc config {update_service_name} type= own
+sc failure {update_service_name} reset= 86400 actions= restart/60000
+sc description {update_service_name} \"RustDesk更新服务，用于定期检查并安装更新\"
 sc start {update_service_name}
-", update_service_name = UPDATE_SERVICE_NAME)
+",
+    app_name = crate::get_app_name(),update_service_name = UPDATE_SERVICE_NAME)
 }
 
 fn run_after_run_cmds(silent: bool) {
