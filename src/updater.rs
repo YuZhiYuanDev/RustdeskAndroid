@@ -40,21 +40,26 @@ pub fn start_auto_update() {
 
 // 手动触发软件更新检查
 pub fn manually_check_update() -> ResultType<()> {
+    log::info!("手动触发更新检查");
     let sender = TX_MSG.lock().unwrap();
     sender.send(UpdateMsg::CheckUpdate)?; // 发送CheckUpdate消息以手动触发更新检查
+    log::debug!("发送 CheckUpdate 消息成功");
     Ok(())
 }
 
 // 停止自动更新功能
 #[allow(dead_code)]
 pub fn stop_auto_update() {
+    log::info!("停止自动更新");
     let sender = TX_MSG.lock().unwrap();
     sender.send(UpdateMsg::Exit).unwrap_or_default(); // 发送Exit消息以停止自动更新
+    log::debug!("发送 Exit 消息成功");
 }
 
 // 检查是否有活动连接
 #[inline]
 fn has_no_active_conns() -> bool {
+    log::info!("检查是否有活跃连接");
     let conns = crate::Connection::alive_conns(); // 获取所有活跃连接
     conns.is_empty() && has_no_controlling_conns() // 如果没有活跃连接且没有控制会话，则返回true
 }
@@ -86,6 +91,7 @@ fn has_no_controlling_conns() -> bool {
 
 // 启动自动更新检查线程，并返回一个Sender实例用于发送更新消息
 fn start_auto_update_check() -> Sender<UpdateMsg> {
+    log::info!("启动自动更新检查线程");
     let (tx, rx) = channel(); // 创建通道，用于在主线程和子线程之间通信
     std::thread::spawn(move || start_auto_update_check_(rx)); // 启动一个新线程来处理自动更新检查
     return tx; // 返回Sender实例，用于发送更新消息
@@ -93,6 +99,7 @@ fn start_auto_update_check() -> Sender<UpdateMsg> {
 
 // 自动更新检查的主要逻辑函数，在单独的线程中运行
 fn start_auto_update_check_(rx_msg: Receiver<UpdateMsg>) {
+    log::info!("开始自动更新检查循环");
     // 初始延迟30秒后开始执行第一次更新检查
     std::thread::sleep(Duration::from_secs(30));
     if let Err(e) = check_update(false) {
@@ -109,6 +116,7 @@ fn start_auto_update_check_(rx_msg: Receiver<UpdateMsg>) {
         let recv_res = rx_msg.recv_timeout(check_interval);
         match &recv_res {
             Ok(UpdateMsg::CheckUpdate) | Err(_) => {
+                log::info!("收到手动触发更新检查");
                 // // 如果距离上次检查时间小于最小间隔，则跳过本次检查
                 // if last_check_time.elapsed() < MIN_INTERVAL {
                 //     // log::debug!("Update check skipped due to minimum interval.");
@@ -117,14 +125,17 @@ fn start_auto_update_check_(rx_msg: Receiver<UpdateMsg>) {
                 // 如果存在活动连接，则调整检查间隔并跳过本次检查
                 // Don't check update if there are alive connections.
                 if !has_no_active_conns() {
+                    log::warn!("存在活跃连接，跳过本次更新检查");
                     check_interval = RETRY_INTERVAL;
                     continue;
                 }
                 // 执行更新检查，如果手动触发则忽略配置中的自动更新选项
+                log::info!("开始执行更新检查...");
                 if let Err(e) = check_update(matches!(recv_res, Ok(UpdateMsg::CheckUpdate))) {
                     log::error!("Error checking for updates: {}", e); // 记录错误信息
                     check_interval = RETRY_INTERVAL; // 设置重试间隔
                 } else {
+                    log::info!("更新检查完成");
                     last_check_time = Instant::now(); // 更新上次检查的时间点
                     check_interval = DUR_ONE_DAY; // 恢复默认的一天检查间隔
                 }

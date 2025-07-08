@@ -14,6 +14,7 @@ use windows_service::{
     service_manager::{ServiceManager, ServiceManagerAccess},
     Error as WinServiceError
 };
+use hbb_common::log;
 
 use crate::updater;
 
@@ -25,50 +26,66 @@ define_windows_service!(ffi_update_service_main, update_service_main);
 
 pub fn update_service_main(_arguments: Vec<OsString>) {
     if let Err(e) = run_update_service() {
-        eprintln!("Failed to run update service: {e:?}");
+        log::error!("Failed to run update service: {e:?}");
     }
 }
 
 pub fn run_update_service() -> Result<(), WinServiceError> {
+    log::info!("Starting update service...");
+
     let stopped = Arc::new(AtomicBool::new(false));
     let stopped_handler = stopped.clone();
 
-    // 事件处理函数 - 处理服务控制命令
+    // 注册服务控制事件处理函数
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
         match control_event {
-            ServiceControl::Stop | ServiceControl::Shutdown => {
-                // 设置停止标志
+            ServiceControl::Stop => {
+                log::info!("Service stop command received");
                 stopped_handler.store(true, Ordering::SeqCst);
                 ServiceControlHandlerResult::NoError
             }
-            _ => ServiceControlHandlerResult::NotImplemented,
+            ServiceControl::Shutdown => {
+                log::info!("System shutdown event received");
+                stopped_handler.store(true, Ordering::SeqCst);
+                ServiceControlHandlerResult::NoError
+            }
+            _ => {
+                log::info!("Unhandled service control event received");
+                ServiceControlHandlerResult::NotImplemented
+            }
         }
     };
 
-    // 注册服务控制处理器
     let status_handle = service_control_handler::register(SERVICE_NAME, event_handler)?;
+    log::info!("Service control handler registered");
 
-    // 报告服务正在启动 (关键步骤!)
+    // 报告服务正在启动 (StartPending)
+    log::info!("Reporting service state as StartPending...");
     status_handle.set_service_status(ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,
         current_state: ServiceState::StartPending,
-        controls_accepted: ServiceControlAccept::empty(), // 启动期间不接受控制命令
+        controls_accepted: ServiceControlAccept::empty(),
         exit_code: ServiceExitCode::Win32(0),
         checkpoint: 1,
-        wait_hint: Duration::from_secs(30), // 30秒超时窗口
+        wait_hint: Duration::from_secs(30),
         process_id: None,
     })?;
 
-    // 启动更新检查线程
+    // 启动更新线程
     let stopped_thread = stopped.clone();
     thread::spawn(move || {
+        log::info!("Update check thread started");
         while !stopped_thread.load(Ordering::SeqCst) {
+            log::info!("Checking for updates...");
             updater::manually_check_update();
+            log::info!("Sleeping for 10 minutes before next update check");
             thread::sleep(Duration::from_secs(10 * 60)); // 每10分钟检查一次
         }
+        log::info!("Update check thread exiting");
     });
 
-    // 报告服务正在运行
+    // 报告服务正在运行 (Running)
+    log::info!("Reporting service state as Running...");
     status_handle.set_service_status(ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,
         current_state: ServiceState::Running,
@@ -80,11 +97,13 @@ pub fn run_update_service() -> Result<(), WinServiceError> {
     })?;
 
     // 主循环 - 等待停止信号
+    log::info!("Main loop waiting for stop signal...");
     while !stopped.load(Ordering::SeqCst) {
         thread::sleep(Duration::from_secs(1));
     }
 
-    // 报告服务已停止
+    // 报告服务已停止 (Stopped)
+    log::info!("Service is stopping. Reporting state as Stopped...");
     status_handle.set_service_status(ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,
         current_state: ServiceState::Stopped,
@@ -95,6 +114,7 @@ pub fn run_update_service() -> Result<(), WinServiceError> {
         process_id: None,
     })?;
 
+    log::info!("Service has been stopped successfully.");
     Ok(())
 }
 
