@@ -10,6 +10,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use std::fs;
 
 // 定义更新消息枚举类型，用于发送不同的更新操作指令
 enum UpdateMsg {
@@ -289,6 +290,18 @@ fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
 
 // 根据URL获取下载文件的路径
 pub fn get_download_file_from_url(url: &str) -> Option<PathBuf> {
-    let filename = url.split('/').last()?; // 从URL中提取文件名
-    Some(std::env::temp_dir().join(filename)) // 返回临时目录下的文件路径
+    // 获取当前可执行文件所在目录
+    let exe_dir = std::env::current_exe().ok()?
+        .parent()?
+        .to_path_buf();
+    
+    // 创建temp目录（如果不存在）
+    let temp_dir = exe_dir.join("temp");
+    if !temp_dir.exists() {
+        fs::create_dir(&temp_dir).ok()?;
+    }
+    
+    // 从URL中提取文件名并返回完整路径
+    let filename = url.split('/').last()?;
+    Some(temp_dir.join(filename))
 }
