@@ -3142,7 +3142,7 @@ sc start {app_name}
 
 fn get_create_updater(exe: &str) -> String {
     format!("
-sc create {update_service_name} binPath= \"{exe}\" start= auto DisplayName= \"{app_name} Update Service\" obj= LocalSystem
+sc create {update_service_name} binPath= \"{exe} RustDeskUpdater\" start= auto DisplayName= \"{app_name} Update Service\"
 sc config {update_service_name} type= own
 sc failure {update_service_name} reset= 86400 actions= restart/60000
 sc description {update_service_name} \"RustDesk更新服务，用于定期检查并安装更新\"
