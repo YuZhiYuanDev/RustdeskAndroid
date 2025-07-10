@@ -177,16 +177,6 @@ pub fn core_main() -> Option<Vec<String>> {
     #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     init_plugins(&args);
-    let service_name = get_service_to_start();
-    match service_name.as_str() {
-        s if s.eq_ignore_ascii_case(crate::platform::get_update_service_name()) => {
-            crate::platform::start_updater_service();
-        }
-        _ => {
-            // 非 service 启动场景
-            println!("Running as console application.");
-        }
-    }
     if args.is_empty() || crate::common::is_empty_uni_link(&args[0]) {
         #[cfg(windows)]
         hbb_common::config::PeerConfig::preload_peers();
@@ -341,6 +331,18 @@ pub fn core_main() -> Option<Vec<String>> {
         } else if args[0] == "--service" {
             log::info!("start --service");
             crate::start_os_service();
+            return None;
+        } else if args[0] == "--install-update-service" {
+            log::info!("start --install-update-service");
+            crate::update_service::register_service();
+            return None;
+        } else if args[0] == "--uninstall-update-service" {
+            log::info!("start --uninstall-update-service");
+            crate::update_service::unregister_service();
+            return None;
+        } else if args[0] == "--update-service" {
+            log::info!("start --update-service");
+            crate::update_service::start_service_dispatcher();
             return None;
         } else if args[0] == "--server" {
             log::info!("start --server with user {}", crate::username());
@@ -769,10 +771,4 @@ fn is_root() -> bool {
     }
     #[allow(unreachable_code)]
     crate::platform::is_root()
-}
-
-pub fn get_service_to_start() -> String {
-    std::env::args()
-        .nth(1)
-        .unwrap_or_default()
 }

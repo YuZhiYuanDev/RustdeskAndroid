@@ -1899,9 +1899,7 @@ fn get_before_uninstall(kill_self: bool) -> String {
         "
     chcp 65001
     sc stop {app_name}
-    sc stop {updater_name}
     sc delete {app_name}
-    sc delete {updater_name}
     taskkill /F /IM {broker_exe}
     taskkill /F /IM {app_name}.exe{filter}
     reg delete HKEY_CLASSES_ROOT\\.{ext} /f
@@ -1909,7 +1907,6 @@ fn get_before_uninstall(kill_self: bool) -> String {
     netsh advfirewall firewall delete rule name=\"{app_name} Service\"
     ",
         broker_exe = WIN_TOPMOST_INJECTED_PROCESS_EXE,
-        updater_name = UPDATE_SERVICE_NAME,
     )
 }
 
@@ -1933,8 +1930,10 @@ fn get_uninstall(kill_self: bool, uninstall_printer: bool) -> String {
 
     let mut uninstall_cert_cmd = "".to_string();
     let mut uninstall_printer_cmd = "".to_string();
+    let mut uninstall_update_service = "".to_string();
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_path) = exe.to_str() {
+            uninstall_update_service = format!("\"{}\" --uninstall-update-service", exe_path);
             uninstall_cert_cmd = format!("\"{}\" --uninstall-cert", exe_path);
             if uninstall_printer {
                 uninstall_printer_cmd = format!("\"{}\" --uninstall-remote-printer", &exe_path);
@@ -1947,6 +1946,7 @@ fn get_uninstall(kill_self: bool, uninstall_printer: bool) -> String {
     {before_uninstall}
     {uninstall_printer_cmd}
     {uninstall_cert_cmd}
+    {uninstall_update_service}
     reg delete {subkey} /f
     {uninstall_amyuni_idd}
     if exist \"{path}\" rd /s /q \"{path}\"
@@ -3141,14 +3141,15 @@ sc start {app_name}
 }
 
 fn get_create_updater(exe: &str) -> String {
-    format!("
-sc create {update_service_name} binPath= \"{exe} RustDeskUpdater\" start= auto DisplayName= \"{app_name} Update Service\"
-sc config {update_service_name} type= own
-sc failure {update_service_name} reset= 86400 actions= restart/60000
-sc description {update_service_name} \"RustDesk更新服务，用于定期检查并安装更新\"
-sc start {update_service_name}
-",
-    app_name = crate::get_app_name(),update_service_name = UPDATE_SERVICE_NAME)
+//     format!("
+// sc create {update_service_name} binPath= \"{exe} RustDeskUpdater\" start= auto DisplayName= \"{app_name} Update Service\"
+// sc config {update_service_name} type= own
+// sc failure {update_service_name} reset= 86400 actions= restart/60000
+// sc description {update_service_name} \"RustDesk更新服务，用于定期检查并安装更新\"
+// sc start {update_service_name}
+// ",
+//     app_name = crate::get_app_name(),update_service_name = UPDATE_SERVICE_NAME)
+"\"{}\" --install-update-service".to_string()
 }
 
 fn run_after_run_cmds(silent: bool) {

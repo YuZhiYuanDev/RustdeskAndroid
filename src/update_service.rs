@@ -1,0 +1,206 @@
+use crate::{common::do_check_software_update, hbbs_http::create_http_client};
+use hbb_common::{bail, log, ResultType};
+use std::{fs, io::{self, Write}, path::PathBuf, thread, time::{Duration, Instant}};
+use windows_service::{
+    define_windows_service,
+    service::{ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus, ServiceType, ServiceStartType},
+    service_control_handler::{self, ServiceControlHandlerResult},
+};
+
+const SERVICE_NAME: &str = "RustDeskUpdateService";
+const CHECK_INTERVAL: Duration = Duration::from_secs(300);
+
+define_windows_service!(ffi_service_main, service_main);
+
+pub fn register_service() -> ResultType<()> {
+    use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
+    use windows_service::service::{ServiceAccess, ServiceInfo, ServiceErrorControl, ServiceStartType};
+
+    let service_binary_path = ::std::env::current_exe()?;
+
+    let service_info = ServiceInfo {
+        name: SERVICE_NAME.into(),
+        display_name: "RustDesk Updater Service".into(),
+        service_type: ServiceType::OWN_PROCESS,
+        start_type: ServiceStartType::AutoStart,
+        error_control: ServiceErrorControl::Normal,
+        executable_path: service_binary_path,
+        launch_arguments: vec!["--update-service".into()],
+        dependencies: vec![],
+        account_name: None,
+        account_password: None,
+    };
+
+    let manager_access = ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE;
+    let service_manager = ServiceManager::local_computer(None::<&str>, manager_access)?;
+
+    match service_manager.create_service(&service_info, ServiceAccess::CHANGE_CONFIG) {
+        Ok(_) => log::info!("Service registered."),
+        Err(e) => bail!("Failed to register service: {}", e),
+    }
+
+    Ok(())
+}
+
+pub fn unregister_service() -> ResultType<()> {
+    use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
+    use windows_service::service::ServiceAccess;
+
+    let manager_access = ServiceManagerAccess::CONNECT;
+    let service_manager = ServiceManager::local_computer(None::<&str>, manager_access)?;
+    let service = service_manager.open_service(SERVICE_NAME, ServiceAccess::STOP | ServiceAccess::DELETE)?;
+
+    // Attempt to stop the service if it's running
+    match service.stop() {
+        Ok(_) => log::info!("Service stopped."),
+        Err(e) => log::warn!("Failed to stop service: {}", e),
+    }
+
+    service.delete()?;
+    log::info!("Service unregistered.");
+    Ok(())
+}
+
+pub fn start_service_dispatcher() -> ResultType<()> {
+    windows_service::service_dispatcher::start(SERVICE_NAME, ffi_service_main)?;
+    Ok(())
+}
+
+fn service_main(_arguments: Vec<std::ffi::OsString>) {
+    if let Err(e) = run_service() {
+        log::error!("Service failed: {}", e);
+    }
+}
+
+fn run_service() -> ResultType<()> {
+    let event_handler = move |control_event| match control_event {
+        ServiceControl::Stop => ServiceControlHandlerResult::NoError,
+        _ => ServiceControlHandlerResult::NotImplemented,
+    };
+
+    let status_handle = service_control_handler::register(SERVICE_NAME, event_handler)?;
+
+    status_handle.set_service_status(ServiceStatus {
+        service_type: ServiceType::OWN_PROCESS,
+        current_state: ServiceState::Running,
+        controls_accepted: ServiceControlAccept::STOP,
+        exit_code: ServiceExitCode::Win32(0),
+        checkpoint: 0,
+        wait_hint: Duration::default(),
+        process_id: None,
+    })?;
+
+    let mut last_check = Instant::now() - CHECK_INTERVAL;
+
+    loop {
+        if last_check.elapsed() >= CHECK_INTERVAL {
+            if let Err(e) = perform_update() {
+                log::error!("Update check failed: {}", e);
+            }
+            last_check = Instant::now();
+        }
+
+        thread::sleep(Duration::from_secs(5));
+    }
+}
+
+fn perform_update() -> ResultType<()> {
+    if !do_check_software_update().is_ok() {
+        return Ok(());
+    }
+
+    let update_url = crate::common::SOFTWARE_UPDATE_URL.lock().unwrap().clone();
+    if update_url.is_empty() {
+        log::debug!("No update available.");
+        return Ok(());
+    }
+
+    let download_url = update_url.replace("tag", "download");
+    let version = download_url.split('/').last().unwrap_or_default();
+
+    #[cfg(target_os = "windows")]
+    let is_msi = crate::platform::is_msi_installed()?;
+
+    #[cfg(target_os = "windows")]
+    let download_url = if cfg!(feature = "flutter") {
+        format!("{}/rustdesk-{}-x86_64.{}", download_url, version, if is_msi { "msi" } else { "exe" })
+    } else {
+        format!("{}/rustdesk-{}-x86-sciter.exe", download_url, version)
+    };
+
+    log::debug!("New version available: {}", &version);
+
+    let client = create_http_client();
+    let Some(file_path) = crate::updater::get_download_file_from_url(&download_url) else {
+        bail!("Failed to get file path from URL: {}", download_url);
+    };
+
+    let mut is_file_exists = false;
+    if file_path.exists() {
+        let file_size = fs::metadata(&file_path)?.len();
+        let response = client.head(&download_url).send()?;
+        if !response.status().is_success() {
+            bail!("Failed to get file size: {}", response.status());
+        }
+        let total_size = response.headers()
+            .get(reqwest::header::CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok());
+        if let Some(total_size) = total_size {
+            if file_size == total_size {
+                is_file_exists = true;
+            } else {
+                fs::remove_file(&file_path)?;
+            }
+        }
+    }
+
+    if !is_file_exists {
+        let response = client.get(&download_url).send()?;
+        if !response.status().is_success() {
+            bail!("Failed to download update: {}", response.status());
+        }
+        let file_data = response.bytes()?;
+        let mut file = fs::File::create(&file_path)?;
+        file.write_all(&file_data)?;
+    }
+
+    #[cfg(target_os = "windows")]
+    update_new_version(is_msi, &version, &file_path);
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
+    log::debug!("New version is downloaded, update begin, is msi: {is_msi}, version: {version}, file: {:?}", file_path.to_str());
+    if let Some(p) = file_path.to_str() {
+        if let Some(session_id) = crate::platform::get_current_process_session_id() {
+            if is_msi {
+                match crate::platform::update_me_msi(p, true) {
+                    Ok(_) => {
+                        log::debug!("New version \"{}\" updated.", version);
+                    }
+                    Err(e) => {
+                        log::error!("Failed to install the new msi version  \"{}\": {}", version, e);
+                    }
+                }
+            } else {
+                match crate::platform::launch_privileged_process(session_id, &format!("{} --update", p)) {
+                    Ok(h) => {
+                        if h.is_null() {
+                            log::error!("Failed to update to the new version: {}", version);
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to run the new version: {}", e);
+                    }
+                }
+            }
+        } else {
+            log::error!("Failed to get the current process session id, Error {}", io::Error::last_os_error());
+        }
+    } else {
+        log::error!("Failed to convert the file path to string: {}", file_path.display());
+    }
+}
