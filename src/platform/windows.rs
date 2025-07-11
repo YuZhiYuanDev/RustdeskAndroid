@@ -1646,9 +1646,8 @@ fn get_after_install(
     netsh advfirewall firewall add rule name=\"{app_name} Service\" dir=out action=allow program=\"{exe}\" enable=yes
     netsh advfirewall firewall add rule name=\"{app_name} Service\" dir=in action=allow program=\"{exe}\" enable=yes
     {create_service}
-    {updater}
     reg add HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /f /v SoftwareSASGeneration /t REG_DWORD /d 1
-    ", create_service=get_create_service(&exe),updater=get_create_updater(&exe))
+    ", create_service=get_create_service(&exe))
 }
 
 /// 根据提供的选项和路径安装应用程序。
@@ -1819,6 +1818,9 @@ if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} 
         "".to_owned()
     };
 
+    // 设置更新服务安装命令
+    let install_update_service = format!("\"{}\" --install-update-service", &src_exe);
+
     // 构建完整的安装命令。
     // Remember to check if `update_me` need to be changed if changing the `cmds`.
     // No need to merge the existing dup code, because the code in these two functions are too critical.
@@ -1852,6 +1854,7 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{path}\\\"
 {import_config}
 {after_install}
 {install_remote_printer}
+{install_update_service}
 {sleep}
     ",
         version = crate::VERSION.replace("-", "."),
@@ -2832,12 +2835,10 @@ taskkill /F /IM {app_name}.exe{filter}
 copy /Y \"{tmp_path}\\{app_name} Tray.lnk\" \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\\"
 {import_config}
 {create_service}
-{updater}
     ",
         app_name = crate::get_app_name(),
         import_config = get_import_config(&exe),
         create_service = get_create_service(&exe),
-        updater = get_create_updater(&exe),
     );
     if let Err(err) = run_cmds(cmds, false, "install") {
         Config::set_option("stop-service".into(), "Y".into());
@@ -3138,18 +3139,6 @@ sc start {app_name}
 ",
     app_name = crate::get_app_name())
     }
-}
-
-fn get_create_updater(exe: &str) -> String {
-//     format!("
-// sc create {update_service_name} binPath= \"{exe} RustDeskUpdater\" start= auto DisplayName= \"{app_name} Update Service\"
-// sc config {update_service_name} type= own
-// sc failure {update_service_name} reset= 86400 actions= restart/60000
-// sc description {update_service_name} \"RustDesk更新服务，用于定期检查并安装更新\"
-// sc start {update_service_name}
-// ",
-//     app_name = crate::get_app_name(),update_service_name = UPDATE_SERVICE_NAME)
-"\"{}\" --install-update-service".to_string()
 }
 
 fn run_after_run_cmds(silent: bool) {

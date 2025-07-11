@@ -63,12 +63,14 @@ pub fn unregister_service() -> ResultType<()> {
 
 pub fn start_service_dispatcher() -> ResultType<()> {
     windows_service::service_dispatcher::start(SERVICE_NAME, ffi_service_main)?;
+    updater_log("Service started successfully.");
     Ok(())
 }
 
 fn service_main(_arguments: Vec<std::ffi::OsString>) {
     if let Err(e) = run_service() {
         log::error!("Service failed: {}", e);
+        updater_log(&format!("Service failed: {}", e));
     }
 }
 
@@ -96,6 +98,7 @@ fn run_service() -> ResultType<()> {
         if last_check.elapsed() >= CHECK_INTERVAL {
             if let Err(e) = perform_update() {
                 log::error!("Update check failed: {}", e);
+                updater_log(&format!("Update check failed: {}", e));
             }
             last_check = Instant::now();
         }
@@ -112,11 +115,13 @@ fn perform_update() -> ResultType<()> {
     let update_url = crate::common::SOFTWARE_UPDATE_URL.lock().unwrap().clone();
     if update_url.is_empty() {
         log::debug!("No update available.");
+        updater_log("No update available.");
         return Ok(());
     }
 
     let download_url = update_url.replace("tag", "download");
     let version = download_url.split('/').last().unwrap_or_default();
+    updater_log(format!("download_url: {}, version: {}", download_url, version).as_str());
 
     #[cfg(target_os = "windows")]
     let is_msi = crate::platform::is_msi_installed()?;
@@ -129,10 +134,12 @@ fn perform_update() -> ResultType<()> {
     };
 
     log::debug!("New version available: {}", &version);
+    updater_log(&format!("New version available: {}", &version));
 
     let client = create_http_client();
     let Some(file_path) = crate::updater::get_download_file_from_url(&download_url) else {
         bail!("Failed to get file path from URL: {}", download_url);
+        updater_log(&format!("Failed to get file path from URL: {}", download_url));
     };
 
     let mut is_file_exists = false;
@@ -141,6 +148,7 @@ fn perform_update() -> ResultType<()> {
         let response = client.head(&download_url).send()?;
         if !response.status().is_success() {
             bail!("Failed to get file size: {}", response.status());
+            updater_log(&format!("Failed to get file size: {}", response.status()));
         }
         let total_size = response.headers()
             .get(reqwest::header::CONTENT_LENGTH)
@@ -159,6 +167,7 @@ fn perform_update() -> ResultType<()> {
         let response = client.get(&download_url).send()?;
         if !response.status().is_success() {
             bail!("Failed to download update: {}", response.status());
+            updater_log(&format!("Failed to download update: {}", response.status()));
         }
         let file_data = response.bytes()?;
         let mut file = fs::File::create(&file_path)?;
@@ -167,6 +176,7 @@ fn perform_update() -> ResultType<()> {
 
     #[cfg(target_os = "windows")]
     update_new_version(is_msi, &version, &file_path);
+    updater_log(&format!("Fuction update_new_version called with is_msi: {}, version: {}, file_path: {:?}", is_msi, version, file_path.to_str()));
 
     Ok(())
 }
@@ -174,15 +184,18 @@ fn perform_update() -> ResultType<()> {
 #[cfg(target_os = "windows")]
 fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
     log::debug!("New version is downloaded, update begin, is msi: {is_msi}, version: {version}, file: {:?}", file_path.to_str());
+    updater_log(&format!("New version is downloaded, update begin, is msi: {}, version: {}, file: {:?}", is_msi, version, file_path.to_str()));
     if let Some(p) = file_path.to_str() {
         if let Some(session_id) = crate::platform::get_current_process_session_id() {
             if is_msi {
                 match crate::platform::update_me_msi(p, true) {
                     Ok(_) => {
                         log::debug!("New version \"{}\" updated.", version);
+                        updater_log(&format!("New version \"{}\" updated.", version));
                     }
                     Err(e) => {
                         log::error!("Failed to install the new msi version  \"{}\": {}", version, e);
+                        updater_log(&format!("Failed to install the new msi version \"{}\": {}", version, e));
                     }
                 }
             } else {
@@ -190,17 +203,50 @@ fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
                     Ok(h) => {
                         if h.is_null() {
                             log::error!("Failed to update to the new version: {}", version);
+                            updater_log(&format!("Failed to update to the new version: {}", version));
                         }
                     }
                     Err(e) => {
                         log::error!("Failed to run the new version: {}", e);
+                        updater_log(&format!("Failed to run the new version: {}", e));
                     }
                 }
             }
         } else {
             log::error!("Failed to get the current process session id, Error {}", io::Error::last_os_error());
+            updater_log(&format!("Failed to get the current process session id, Error {}", io::Error::last_os_error()));
         }
     } else {
         log::error!("Failed to convert the file path to string: {}", file_path.display());
+        updater_log(&format!("Failed to convert the file path to string: {}", file_path.display()));
+    }
+}
+
+pub fn updater_log(msg: &str) {
+    let program_data = match std::env::var("ProgramData") {
+        Ok(val) => val,
+        Err(e) => {
+            eprintln!("Failed to get ProgramData env var: {}", e);
+            return;
+        }
+    };
+
+    let mut log_dir = PathBuf::from(program_data);
+    log_dir.push("RustDesk");
+
+    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+        eprintln!("Failed to create log directory {:?}: {}", log_dir, e);
+        return;
+    }
+
+    let log_path = log_dir.join("update_service.log");
+
+    if let Ok(mut file) =  std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
+        let now = chrono::Local::now();
+        let _ = writeln!(file, "[{}] {}", now.format("%Y-%m-%d %H:%M:%S"), msg);
     }
 }
