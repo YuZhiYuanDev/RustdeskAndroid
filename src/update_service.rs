@@ -140,7 +140,7 @@ fn perform_update() -> ResultType<()> {
         return Ok(());
     }
 
-    let download_url = update_url.replace("tag", "download");
+    let mut download_url = update_url.replace("tag", "download");
     let version = download_url.split('/').last().unwrap_or_default();
     updater_log(format!("download_url: {}, version: {}", download_url, version).as_str());
 
@@ -158,41 +158,95 @@ fn perform_update() -> ResultType<()> {
     updater_log(&format!("New version available: {}", &version));
 
     let client = create_http_client();
-    let Some(file_path) = crate::updater::get_download_file_from_url(&download_url) else {
-        bail!("Failed to get file path from URL: {}", download_url);
-        updater_log(&format!("Failed to get file path from URL: {}", download_url));
+
+    // 如果 URL 含 gitee.com，先获取真实下载地址
+    let final_download_url = if download_url.contains("gitee.com") {
+        updater_log("Detected Gitee URL, resolving actual download link...");
+
+        let resp1 = client.get(&download_url).send()?;
+        let location1 = resp1
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+
+        updater_log(&format!("Redirect location1: {}", location1));
+
+        if location1.is_empty() {
+            bail!("Gitee redirect failed at first step.");
+        }
+
+        let resp2 = client.get(&location1).send()?;
+        let location2 = resp2
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+
+        updater_log(&format!("Redirect location2: {}", location2));
+
+        if location2.is_empty() {
+            bail!("Gitee redirect failed at second step.");
+        }
+
+        location2
+    } else {
+        download_url.clone()
+    };
+
+    updater_log(&format!("Final download URL: {}", final_download_url));
+
+    let Some(file_path) = crate::updater::get_download_file_from_url(&final_download_url) else {
+        bail!("Failed to get file path from URL: {}", final_download_url);
+        updater_log(&format!("Failed to get file path from URL: {}", final_download_url));
     };
 
     let mut is_file_exists = false;
-    if file_path.exists() {
-        let file_size = fs::metadata(&file_path)?.len();
-        let response = client.head(&download_url).send()?;
-        if !response.status().is_success() {
-            bail!("Failed to get file size: {}", response.status());
-            updater_log(&format!("Failed to get file size: {}", response.status()));
-        }
-        let total_size = response.headers()
-            .get(reqwest::header::CONTENT_LENGTH)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse::<u64>().ok());
-        if let Some(total_size) = total_size {
-            if file_size == total_size {
-                is_file_exists = true;
-            } else {
-                fs::remove_file(&file_path)?;
+    if !final_download_url.contains("gitee.com") {
+        if file_path.exists() {
+            let file_size = fs::metadata(&file_path)?.len();
+            let response = client.head(&final_download_url).send()?;
+            if !response.status().is_success() {
+                bail!("Failed to get file size: {}", response.status());
+                updater_log(&format!("Failed to get file size: {}", response.status()));
             }
+            let total_size = response.headers()
+                .get(reqwest::header::CONTENT_LENGTH)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok());
+            if let Some(total_size) = total_size {
+                if file_size == total_size {
+                    is_file_exists = true;
+                } else {
+                    fs::remove_file(&file_path)?;
+                }
+            }
+        }
+    } else {
+        if file_path.exists() {
+            // 不信任旧文件，强制重下
+            fs::remove_file(&file_path)?;
         }
     }
 
     if !is_file_exists {
-        let response = client.get(&download_url).send()?;
+        let response = client.get(&final_download_url).send()?;
         if !response.status().is_success() {
             bail!("Failed to download update: {}", response.status());
             updater_log(&format!("Failed to download update: {}", response.status()));
         }
-        let file_data = response.bytes()?;
+
+        let bytes = response.bytes()?;
+        if bytes.starts_with(b"<!DOCTYPE") || bytes.starts_with(b"<html") {
+            let snippet = String::from_utf8_lossy(&bytes[..bytes.len().min(200)]);
+            bail!("Download returned HTML instead of file. Body starts with: {}", snippet);
+            updater_log(&format!("Download returned HTML instead of file. Body starts with: {}", snippet));
+        }
+
         let mut file = fs::File::create(&file_path)?;
-        file.write_all(&file_data)?;
+        file.write_all(&bytes)?;
     }
 
     #[cfg(target_os = "windows")]
