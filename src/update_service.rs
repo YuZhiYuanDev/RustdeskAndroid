@@ -1,6 +1,6 @@
 use crate::{common::do_check_software_update, hbbs_http::create_http_client};
 use hbb_common::{bail, log, ResultType};
-use std::{fs, io::{self, Write, Read}, path::PathBuf, thread, time::{Duration, Instant}, sync::atomic::{AtomicBool, Ordering}, sync::Arc};
+use std::{fs, io::{self, Write, Read}, path::PathBuf, thread, time::{Duration, Instant}};
 use windows_service::{
     define_windows_service,
     service::{ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus, ServiceType, ServiceStartType},
@@ -75,14 +75,8 @@ fn service_main(_arguments: Vec<std::ffi::OsString>) {
 }
 
 fn run_service() -> ResultType<()> {
-    let stop_requested = Arc::new(AtomicBool::new(false));
-    let stop_flag = Arc::clone(&stop_requested);
-
     let event_handler = move |control_event| match control_event {
-        ServiceControl::Stop => {
-            stop_flag.store(true, Ordering::SeqCst);
-            ServiceControlHandlerResult::NoError
-        }
+        ServiceControl::Stop => ServiceControlHandlerResult::NoError,
         _ => ServiceControlHandlerResult::NotImplemented,
     };
 
@@ -100,7 +94,7 @@ fn run_service() -> ResultType<()> {
 
     let mut last_check = Instant::now() - CHECK_INTERVAL;
 
-    while !stop_requested.load(Ordering::SeqCst) {
+    loop {
         if last_check.elapsed() >= CHECK_INTERVAL {
             if let Err(e) = perform_update() {
                 log::error!("Update check failed: {}", e);
@@ -109,25 +103,8 @@ fn run_service() -> ResultType<()> {
             last_check = Instant::now();
         }
 
-        for _ in 0..10 {
-            thread::sleep(Duration::from_millis(100));
-            if stop_requested.load(Ordering::SeqCst) {
-                break;
-            }
-        }
+        thread::sleep(Duration::from_secs(5));
     }
-
-    status_handle.set_service_status(ServiceStatus {
-        service_type: ServiceType::OWN_PROCESS,
-        current_state: ServiceState::Stopped,
-        controls_accepted: ServiceControlAccept::empty(),
-        exit_code: ServiceExitCode::Win32(0),
-        checkpoint: 0,
-        wait_hint: Duration::default(),
-        process_id: None,
-    })?;
-
-    Ok(())
 }
 
 fn perform_update() -> ResultType<()> {
