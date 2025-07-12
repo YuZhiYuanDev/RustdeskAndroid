@@ -1,6 +1,6 @@
 use crate::{common::do_check_software_update, hbbs_http::create_http_client};
 use hbb_common::{bail, log, ResultType};
-use std::{fs, io::{self, Write}, path::PathBuf, thread, time::{Duration, Instant}};
+use std::{fs, io::{self, Write, Read}, path::PathBuf, thread, time::{Duration, Instant}};
 use windows_service::{
     define_windows_service,
     service::{ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus, ServiceType, ServiceStartType},
@@ -8,7 +8,7 @@ use windows_service::{
 };
 
 const SERVICE_NAME: &str = "RustDeskUpdateService";
-const CHECK_INTERVAL: Duration = Duration::from_secs(300);
+const CHECK_INTERVAL: Duration = Duration::from_secs(10 * 60);
 
 define_windows_service!(ffi_service_main, service_main);
 
@@ -159,58 +159,21 @@ fn perform_update() -> ResultType<()> {
 
     let client = create_http_client();
 
-    // 如果 URL 含 gitee.com，先获取真实下载地址
-    let final_download_url = if download_url.contains("gitee.com") {
-        updater_log("Detected Gitee URL, resolving actual download link...");
+    updater_log(&format!("Final download URL: {}", download_url));
 
-        let resp1 = client.get(&download_url).send()?;
-        let location1 = resp1
-            .headers()
-            .get(reqwest::header::LOCATION)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or_default()
-            .to_string();
-
-        updater_log(&format!("Redirect location1: {}", location1));
-
-        if location1.is_empty() {
-            bail!("Gitee redirect failed at first step.");
-        }
-
-        let resp2 = client.get(&location1).send()?;
-        let location2 = resp2
-            .headers()
-            .get(reqwest::header::LOCATION)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or_default()
-            .to_string();
-
-        updater_log(&format!("Redirect location2: {}", location2));
-
-        if location2.is_empty() {
-            bail!("Gitee redirect failed at second step.");
-        }
-
-        location2
-    } else {
-        download_url.clone()
-    };
-
-    updater_log(&format!("Final download URL: {}", final_download_url));
-
-    let Some(file_path) = crate::updater::get_download_file_from_url(&final_download_url) else {
-        bail!("Failed to get file path from URL: {}", final_download_url);
-        updater_log(&format!("Failed to get file path from URL: {}", final_download_url));
+    let Some(file_path) = crate::updater::get_download_file_from_url(&download_url) else {
+        updater_log(&format!("Failed to get file path from URL: {}", download_url));
+        bail!("Failed to get file path from URL: {}", download_url);
     };
 
     let mut is_file_exists = false;
-    if !final_download_url.contains("gitee.com") {
+    if !download_url.contains("gitee.com") {
         if file_path.exists() {
             let file_size = fs::metadata(&file_path)?.len();
-            let response = client.head(&final_download_url).send()?;
+            let response = client.head(&download_url).send()?;
             if !response.status().is_success() {
-                bail!("Failed to get file size: {}", response.status());
                 updater_log(&format!("Failed to get file size: {}", response.status()));
+                bail!("Failed to get file size: {}", response.status());
             }
             let total_size = response.headers()
                 .get(reqwest::header::CONTENT_LENGTH)
@@ -232,26 +195,28 @@ fn perform_update() -> ResultType<()> {
     }
 
     if !is_file_exists {
-        let response = client.get(&final_download_url).send()?;
-        if !response.status().is_success() {
-            bail!("Failed to download update: {}", response.status());
-            updater_log(&format!("Failed to download update: {}", response.status()));
+        match crate::hbbs_http::downloader::download_file(download_url.clone(), Some(file_path.clone()), Some(Duration::from_secs(3))) {
+            Ok(id) => {
+                updater_log(&format!("Download succeeded. id={}, file_path={:?}", id, file_path.to_str()));
+            }
+            Err(e) => {
+                updater_log(&format!("Download failed: {}, url={}", e.to_string(), download_url));
+                bail!("Download failed: {}", e);
+            }
         }
+    }
 
-        let bytes = response.bytes()?;
-        if bytes.starts_with(b"<!DOCTYPE") || bytes.starts_with(b"<html") {
-            let snippet = String::from_utf8_lossy(&bytes[..bytes.len().min(200)]);
-            bail!("Download returned HTML instead of file. Body starts with: {}", snippet);
-            updater_log(&format!("Download returned HTML instead of file. Body starts with: {}", snippet));
-        }
-
-        let mut file = fs::File::create(&file_path)?;
-        file.write_all(&bytes)?;
+    let mut file = fs::File::open(&file_path)?;
+    let mut buf = [0u8; 20];
+    let n = file.read(&mut buf)?;
+    if buf.starts_with(b"<!DOCTYPE") || buf.starts_with(b"<html") {
+        updater_log(&format!("Downloaded file appears to be HTML instead of binary. File starts with: {:?}", String::from_utf8_lossy(&buf[..n])));
+        bail!("Downloaded file appears to be HTML instead of binary. File starts with: {:?}", String::from_utf8_lossy(&buf[..n]));
     }
 
     #[cfg(target_os = "windows")]
     update_new_version(is_msi, &version, &file_path);
-    updater_log(&format!("Fuction update_new_version called with is_msi: {}, version: {}, file_path: {:?}", is_msi, version, file_path.to_str()));
+    updater_log(&format!("Function update_new_version called with is_msi: {}, version: {}, file_path: {:?}", is_msi, version, file_path.to_str()));
 
     Ok(())
 }

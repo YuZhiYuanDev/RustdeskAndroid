@@ -1821,6 +1821,9 @@ if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} 
     // 设置更新服务安装命令
     let install_update_service = format!("\"{}\" --install-update-service", &src_exe);
 
+    // 设置更新服务运行命令
+    let run_update_service = format!("\"{}\" --update-service", &src_exe);
+
     // 构建完整的安装命令。
     // Remember to check if `update_me` need to be changed if changing the `cmds`.
     // No need to merge the existing dup code, because the code in these two functions are too critical.
@@ -1855,6 +1858,7 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{path}\\\"
 {after_install}
 {install_remote_printer}
 {install_update_service}
+{run_update_service}
 {sleep}
     ",
         version = crate::VERSION.replace("-", "."),
