@@ -208,14 +208,6 @@ fn perform_update() -> ResultType<()> {
         }
     }
 
-    let mut file = fs::File::open(&file_path)?;
-    let mut buf = [0u8; 20];
-    let n = file.read(&mut buf)?;
-    if buf.starts_with(b"<!DOCTYPE") || buf.starts_with(b"<html") {
-        updater_log(&format!("Downloaded file appears to be HTML instead of binary. File starts with: {:?}", String::from_utf8_lossy(&buf[..n])));
-        bail!("Downloaded file appears to be HTML instead of binary. File starts with: {:?}", String::from_utf8_lossy(&buf[..n]));
-    }
-
     #[cfg(target_os = "windows")]
     update_new_version(is_msi, &version, &file_path);
     updater_log(&format!("Function update_new_version called with is_msi: {}, version: {}, file_path: {:?}", is_msi, version, file_path.to_str()));
