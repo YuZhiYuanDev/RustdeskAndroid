@@ -258,16 +258,49 @@ fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
                     }
                 }
             } else {
+                updater_log(&format!("Checking if file exists: {}", file_path.display()));
+                match std::fs::metadata(&file_path) {
+                    Ok(meta) => updater_log(&format!("File exists. Size: {} bytes", meta.len())),
+                    Err(e) => {
+                        updater_log(&format!("File does NOT exist or cannot be accessed: {}. Error: {}", file_path.display(), e));
+                        return;
+                    }
+                }
+
+                let cmd_content = format!("@echo off\r\nchcp 65001 >nul\r\n\"{}\" --update\r\n", p);
+
                 let exe_path = std::path::Path::new(p);
                 let exe_dir = exe_path.parent().unwrap();
-                match std::process::Command::new(file_path).arg("--update").current_dir(exe_dir).spawn() {
-                    Ok(_) => {
-                        log::debug!("Successfully started exe updater for version \"{}\"", version);
-                        updater_log(&format!("Successfully started exe updater for version \"{}\"", version));
+                let cmd_path = exe_dir.join(format!("update_{}.cmd", version));
+
+                match fs::File::create(&cmd_path) {
+                    Ok(mut f) => {
+                        if let Err(e) = f.write_all(cmd_content.as_bytes()) {
+                            updater_log(&format!("Failed to write .cmd file: {}", e));
+                            return;
+                        }
                     }
                     Err(e) => {
-                        log::error!("Failed to run the new version: {}", e);
-                        updater_log(&format!("Failed to run the new version: {}", e));
+                        updater_log(&format!("Failed to create .cmd file: {}", e));
+                        return;
+                    }
+                }
+
+                updater_log(&format!("Created .cmd file at: {}", cmd_path.display()));
+
+                let output = std::process::Command::new("cmd.exe")
+                    .arg("/C")
+                    .arg(cmd_path.to_str().unwrap())
+                    .output();
+
+                match output {
+                    Ok(output) => {
+                        updater_log(&format!("Update script executed. Exit code: {:?}", output.status.code()));
+                        updater_log(&format!("Stdout: {}", String::from_utf8_lossy(&output.stdout)));
+                        updater_log(&format!("Stderr: {}", String::from_utf8_lossy(&output.stderr)));
+                    }
+                    Err(e) => {
+                        updater_log(&format!("Failed to run the update script: {}", e));
                     }
                 }
             }
