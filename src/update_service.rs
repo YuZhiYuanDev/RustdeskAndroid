@@ -208,9 +208,9 @@ fn perform_update() -> ResultType<()> {
         }
     }
 
+    updater_log(&format!("Call function update_new_version with is_msi: {}, version: {}, file_path: {:?}", is_msi, version, file_path.to_str()));
     #[cfg(target_os = "windows")]
     update_new_version(is_msi, &version, &file_path);
-    updater_log(&format!("Function update_new_version called with is_msi: {}, version: {}, file_path: {:?}", is_msi, version, file_path.to_str()));
 
     Ok(())
 }
@@ -233,12 +233,10 @@ fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
                     }
                 }
             } else {
-                match crate::platform::launch_privileged_process(session_id, &format!("{} --update", p)) {
-                    Ok(h) => {
-                        if h.is_null() {
-                            log::error!("Failed to update to the new version: {}", version);
-                            updater_log(&format!("Failed to update to the new version: {}", version));
-                        }
+                match std::process::Command::new(p).arg("--update").spawn() {
+                    Ok(_) => {
+                        log::debug!("Successfully started exe updater for version \"{}\"", version);
+                        updater_log(&format!("Successfully started exe updater for version \"{}\"", version));
                     }
                     Err(e) => {
                         log::error!("Failed to run the new version: {}", e);
