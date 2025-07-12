@@ -34,9 +34,27 @@ pub fn register_service() -> ResultType<()> {
     let manager_access = ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE;
     let service_manager = ServiceManager::local_computer(None::<&str>, manager_access)?;
 
-    match service_manager.create_service(&service_info, ServiceAccess::CHANGE_CONFIG) {
-        Ok(_) => log::info!("Service registered."),
-        Err(e) => bail!("Failed to register service: {}", e),
+    match service_manager.create_service(&service_info, ServiceAccess::START | ServiceAccess::CHANGE_CONFIG) {
+        Ok(service) => {
+            log::info!("Service registered.");
+            updater_log("Service registered.");
+
+            // 尝试启动服务
+            match service.start::<&std::ffi::OsStr>(&[]) {
+                Ok(_) => {
+                    log::info!("Service started successfully.");
+                    updater_log("Service started successfully.");
+                }
+                Err(e) => {
+                    log::warn!("Failed to start service: {}", e);
+                    updater_log(&format!("Failed to start service: {}", e));
+                }
+            }
+        }
+        Err(e) => {
+            updater_log(&format!("Failed to register service: {}", e));
+            bail!("Failed to register service: {}", e);
+        }
     }
 
     Ok(())
@@ -52,12 +70,19 @@ pub fn unregister_service() -> ResultType<()> {
 
     // Attempt to stop the service if it's running
     match service.stop() {
-        Ok(_) => log::info!("Service stopped."),
-        Err(e) => log::warn!("Failed to stop service: {}", e),
+        Ok(_) => {
+            log::info!("Service stopped.");
+            updater_log("Service stopped.");
+        }
+        Err(e) => {
+            log::warn!("Failed to stop service: {}", e);
+            updater_log(&format!("Failed to stop service: {}", e));
+        }
     }
 
     service.delete()?;
     log::info!("Service unregistered.");
+    updater_log("Service unregistered.");
     Ok(())
 }
 

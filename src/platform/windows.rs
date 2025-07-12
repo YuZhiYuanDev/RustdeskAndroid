@@ -469,7 +469,6 @@ fn fix_cursor_mask(
 
 // 使用宏定义创建一个 Windows 服务入口点
 define_windows_service!(ffi_service_main, service_main);
-define_windows_service!(ffi_update_service_main, update_service_main);
 
 /// Windows 服务的主执行函数。
 ///
@@ -480,12 +479,6 @@ fn service_main(arguments: Vec<OsString>) {
     if let Err(e) = run_service(arguments) {
         // 如果服务启动失败，记录错误日志
         log::error!("run_service failed: {}", e);
-    }
-}
-
-fn update_service_main(arguments: Vec<OsString>) {
-    if let Err(e) = run_update_service(arguments) {
-        log::error!("run_update_service failed: {}", e);
     }
 }
 
@@ -834,88 +827,6 @@ async fn run_service(_arguments: Vec<OsString>) -> ResultType<()> {
     })?;
 
     Ok(())
-}
-
-#[tokio::main(flavor = "current_thread")]
-async fn run_update_service(_arguments: Vec<OsString>) -> ResultType<()> {
-    use std::time::Duration;
-    use windows_service::service::{
-        ServiceControl, ServiceControlAccept, ServiceExitCode,
-        ServiceState, ServiceStatus, ServiceType,
-    };
-    use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
-
-    log::info!("Update service is starting...");
-
-    let event_handler = move |control_event| -> ServiceControlHandlerResult {
-        log::info!("Update service got control event: {:?}", control_event);
-        match control_event {
-            ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
-            ServiceControl::Stop | ServiceControl::Preshutdown | ServiceControl::Shutdown => {
-                SERVICE_STOP_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
-                ServiceControlHandlerResult::NoError
-            }
-            _ => ServiceControlHandlerResult::NotImplemented,
-        }
-    };
-
-    let status_handle = service_control_handler::register(
-         crate::platform::get_update_service_name(),  // 注意：需要单独定义更新服务名
-        event_handler,
-    )?;
-
-    // 报告：正在运行
-    status_handle.set_service_status(ServiceStatus {
-        service_type: ServiceType::OWN_PROCESS,
-        current_state: ServiceState::Running,
-        controls_accepted: ServiceControlAccept::STOP,
-        exit_code: ServiceExitCode::Win32(0),
-        checkpoint: 0,
-        wait_hint: Duration::default(),
-        process_id: None,
-    })?;
-
-    log::info!("Update service running.");
-
-    while !SERVICE_STOP_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
-        log::info!("Update service checking for updates...");
-        match crate::updater::manually_check_update() {
-            Ok(_) => {
-                log::info!("Update check completed successfully.");
-            }
-            Err(e) => {
-                log::error!("Update check failed: {}", e);
-            }
-        }
-        tokio::time::sleep(Duration::from_secs(600)).await; // 每10分钟执行一次
-    }
-
-    log::info!("Update service is stopping...");
-
-    status_handle.set_service_status(ServiceStatus {
-        service_type: ServiceType::OWN_PROCESS,
-        current_state: ServiceState::Stopped,
-        controls_accepted: ServiceControlAccept::empty(),
-        exit_code: ServiceExitCode::Win32(0),
-        checkpoint: 0,
-        wait_hint: Duration::default(),
-        process_id: None,
-    })?;
-
-    Ok(())
-}
-
-pub fn get_update_service_name() -> &'static str {UPDATE_SERVICE_NAME}
-
-pub fn start_updater_service() {
-    if let Err(e) =
-        windows_service::service_dispatcher::start(
-             crate::platform::get_update_service_name(),
-            ffi_update_service_main,
-        )
-    {
-        log::error!("start_update_service failed: {}", e);
-    }
 }
 
 // 全局服务停止标志
