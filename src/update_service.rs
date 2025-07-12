@@ -75,13 +75,8 @@ fn service_main(_arguments: Vec<std::ffi::OsString>) {
 }
 
 fn run_service() -> ResultType<()> {
-    let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let stop_flag_clone = stop_flag.clone();
     let event_handler = move |control_event| match control_event {
-        ServiceControl::Stop => {
-            stop_flag_clone.store(true, std::sync::atomic::Ordering::Relaxed);
-            ServiceControlHandlerResult::NoError
-        }
+        ServiceControl::Stop => ServiceControlHandlerResult::NoError,
         _ => ServiceControlHandlerResult::NotImplemented,
     };
 
@@ -100,10 +95,6 @@ fn run_service() -> ResultType<()> {
     let mut last_check = Instant::now() - CHECK_INTERVAL;
 
     loop {
-        if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-            break;
-        }
-
         if last_check.elapsed() >= CHECK_INTERVAL {
             if let Err(e) = perform_update() {
                 log::error!("Update check failed: {}", e);
@@ -114,18 +105,6 @@ fn run_service() -> ResultType<()> {
 
         thread::sleep(Duration::from_secs(5));
     }
-
-    status_handle.set_service_status(ServiceStatus {
-        service_type: ServiceType::OWN_PROCESS,
-        current_state: ServiceState::Stopped,
-        controls_accepted: ServiceControlAccept::empty(),
-        exit_code: ServiceExitCode::Win32(0),
-        checkpoint: 0,
-        wait_hint: Duration::default(),
-        process_id: None,
-    })?;
-
-    Ok(())
 }
 
 fn perform_update() -> ResultType<()> {

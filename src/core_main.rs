@@ -334,15 +334,15 @@ pub fn core_main() -> Option<Vec<String>> {
             return None;
         } else if args[0] == "--install-update-service" {
             log::info!("start --install-update-service");
-            crate::update_service::register_service();
+            let _ = crate::update_service::register_service();
             return None;
         } else if args[0] == "--uninstall-update-service" {
             log::info!("start --uninstall-update-service");
-            crate::update_service::unregister_service();
+            let _ = crate::update_service::unregister_service();
             return None;
         } else if args[0] == "--update-service" {
             log::info!("start --update-service");
-            crate::update_service::start_service_dispatcher();
+            let _ = crate::update_service::start_service_dispatcher();
             return None;
         } else if args[0] == "--server" {
             log::info!("start --server with user {}", crate::username());
