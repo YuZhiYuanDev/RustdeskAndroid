@@ -258,7 +258,9 @@ fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
                     }
                 }
             } else {
-                match std::process::Command::new(p).arg("--update").spawn() {
+                let exe_path = std::path::Path::new(p);
+                let exe_dir = exe_path.parent().unwrap();
+                match std::process::Command::new(file_path).arg("--update").current_dir(exe_dir).spawn() {
                     Ok(_) => {
                         log::debug!("Successfully started exe updater for version \"{}\"", version);
                         updater_log(&format!("Successfully started exe updater for version \"{}\"", version));
