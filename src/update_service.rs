@@ -259,8 +259,10 @@ fn perform_update() -> ResultType<()> {
 
                             if let Some(path) = data.path {
                                 if path.exists() {
-                                    updater_log(&format!("Download finished successfully. File saved at: {}", path.display()));
-                                    break;
+                                    if total_size > 0 && downloaded_size >= total_size {
+                                        updater_log(&format!("Download finished successfully. File saved at: {}", path.display()));
+                                        break;
+                                    }
                                 }
                             }
                         }
