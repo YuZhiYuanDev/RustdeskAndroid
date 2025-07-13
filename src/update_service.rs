@@ -260,9 +260,8 @@ fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
             } else {
                 let cmd_content = format!("@echo off\r\nchcp 65001 >nul\r\n\"{}\" --update\r\n", p);
 
-                let exe_path = std::path::Path::new(p);
-                let exe_dir = exe_path.parent().unwrap();
-                let cmd_path = exe_dir.join(format!("update_{}.cmd", version));
+                let temp_dir = env::temp_dir();
+                let cmd_path: PathBuf = temp_dir.join(format!("update_{}.cmd", version));
 
                 match fs::File::create(&cmd_path) {
                     Ok(mut f) => {
