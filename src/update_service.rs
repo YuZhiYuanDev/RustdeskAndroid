@@ -258,15 +258,6 @@ fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
                     }
                 }
             } else {
-                updater_log(&format!("Checking if file exists: {}", file_path.display()));
-                match std::fs::metadata(&file_path) {
-                    Ok(meta) => updater_log(&format!("File exists. Size: {} bytes", meta.len())),
-                    Err(e) => {
-                        updater_log(&format!("File does NOT exist or cannot be accessed: {}. Error: {}", file_path.display(), e));
-                        return;
-                    }
-                }
-
                 let cmd_content = format!("@echo off\r\nchcp 65001 >nul\r\n\"{}\" --update\r\n", p);
 
                 let exe_path = std::path::Path::new(p);
