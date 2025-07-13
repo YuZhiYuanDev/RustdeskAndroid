@@ -258,7 +258,11 @@ fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
                     }
                 }
             } else {
-                let cmd_content = format!("@echo off\r\nchcp 65001 >nul\r\n\"{}\" --update\r\n", p);
+                let exe_path = std::path::Path::new(p);
+                let exe_dir = exe_path.parent().unwrap();
+                let exe_filename = exe_path.file_name().unwrap().to_string_lossy();
+                let cmd_content = format!("@echo off\r\nchcp 65001 >nul\r\ncd /d \"{}\"\r\n\"{}\" --update\r\n", exe_dir.display(), exe_filename);
+                updater_log(&format!("Cmd content: {}", cmd_content));
 
                 let temp_dir = std::env::temp_dir();
                 let cmd_path: PathBuf = temp_dir.join(format!("update_{}.cmd", version));
