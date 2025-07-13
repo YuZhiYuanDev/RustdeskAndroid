@@ -8,7 +8,7 @@ use windows_service::{
 };
 
 const SERVICE_NAME: &str = "RustDeskUpdateService";
-const CHECK_INTERVAL: Duration = Duration::from_secs(10 * 60);
+const CHECK_INTERVAL: Duration = Duration::from_secs(1 * 60 * 60);
 
 define_windows_service!(ffi_service_main, service_main);
 
@@ -358,31 +358,34 @@ fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
     }
 }
 
-pub fn updater_log(msg: &str) {
-    let program_data = match std::env::var("ProgramData") {
-        Ok(val) => val,
-        Err(e) => {
-            eprintln!("Failed to get ProgramData env var: {}", e);
+fn updater_log(msg: &str) {
+    #[cfg(debug_assertions)]
+    {
+        let program_data = match std::env::var("ProgramData") {
+            Ok(val) => val,
+            Err(e) => {
+                eprintln!("Failed to get ProgramData env var: {}", e);
+                return;
+            }
+        };
+
+        let mut log_dir = PathBuf::from(program_data);
+        log_dir.push("RustDesk");
+
+        if let Err(e) = std::fs::create_dir_all(&log_dir) {
+            eprintln!("Failed to create log directory {:?}: {}", log_dir, e);
             return;
         }
-    };
 
-    let mut log_dir = PathBuf::from(program_data);
-    log_dir.push("RustDesk");
+        let log_path = log_dir.join("update_service.log");
 
-    if let Err(e) = std::fs::create_dir_all(&log_dir) {
-        eprintln!("Failed to create log directory {:?}: {}", log_dir, e);
-        return;
-    }
-
-    let log_path = log_dir.join("update_service.log");
-
-    if let Ok(mut file) =  std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-    {
-        let now = chrono::Local::now();
-        let _ = writeln!(file, "[{}] {}", now.format("%Y-%m-%d %H:%M:%S"), msg);
+        if let Ok(mut file) =  std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            let now = chrono::Local::now();
+            let _ = writeln!(file, "[{}] {}", now.format("%Y-%m-%d %H:%M:%S"), msg);
+        }
     }
 }
