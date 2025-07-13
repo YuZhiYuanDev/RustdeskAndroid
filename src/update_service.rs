@@ -262,6 +262,8 @@ fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
 
                 let temp_dir = env::temp_dir();
                 let cmd_path: PathBuf = temp_dir.join(format!("update_{}.cmd", version));
+                updater_log(&format!("Temp dir: {}", temp_dir.display()));
+                updater_log(&format!("Cmd path: {}", cmd_path.display()));
 
                 match fs::File::create(&cmd_path) {
                     Ok(mut f) => {
