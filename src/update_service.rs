@@ -260,7 +260,7 @@ fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
             } else {
                 let cmd_content = format!("@echo off\r\nchcp 65001 >nul\r\n\"{}\" --update\r\n", p);
 
-                let temp_dir = env::temp_dir();
+                let temp_dir = std::env::temp_dir();
                 let cmd_path: PathBuf = temp_dir.join(format!("update_{}.cmd", version));
                 updater_log(&format!("Temp dir: {}", temp_dir.display()));
                 updater_log(&format!("Cmd path: {}", cmd_path.display()));
