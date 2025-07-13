@@ -290,23 +290,6 @@ fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
 
 // 根据URL获取下载文件的路径
 pub fn get_download_file_from_url(url: &str) -> Option<PathBuf> {
-    let filename = url.split('/').last()?.trim();
-
-    if filename.is_empty() {
-        return None;
-    }
-
-    // 从环境变量获取 ProgramData 路径
-    let program_data_dir = std::env::var("ProgramData").ok()?;
-
-    let mut app_dir = PathBuf::from(program_data_dir);
-    app_dir.push(crate::get_app_name());
-
-    // 创建 MyApp 文件夹（如果不存在）
-    if let Err(e) = fs::create_dir_all(&app_dir) {
-        eprintln!("Failed to create directory {:?}: {}", app_dir, e);
-        return None;
-    }
-
-    Some(app_dir.join(filename))
+    let filename = url.split('/').last()?; // 从URL中提取文件名
+    Some(std::env::temp_dir().join(filename)) // 返回临时目录下的文件路径
 }
