@@ -222,13 +222,58 @@ fn perform_update() -> ResultType<()> {
     }
 
     if !is_file_exists {
-        match crate::hbbs_http::downloader::download_file(download_url.clone(), Some(file_path.clone()), Some(Duration::from_secs(3))) {
-            Ok(id) => {
-                updater_log(&format!("Download succeeded. id={}, file_path={:?}", id, file_path.to_str()));
-            }
-            Err(e) => {
-                updater_log(&format!("Download failed: {}, url={}", e.to_string(), download_url));
-                bail!("Download failed: {}", e);
+        match crate::hbbs_http::downloader::download_file(download_url.clone(), Some(file_path.clone()), Some(Duration::from_secs(1))) {
+                Ok(id) => {
+                    updater_log(&format!("Download started. id={}, file_path={:?}", id, file_path.to_str()));
+
+                    let mut last_printed = std::time::Instant::now();
+
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+
+                        match crate::hbbs_http::downloader::get_download_data(&id) {
+                            Ok(data) => {
+                                let downloaded_size = data.downloaded_size;
+                                let total_size = data.total_size.unwrap_or(0);
+                                let progress = if total_size > 0 {
+                                    format!("{:.2}%", downloaded_size as f64 / total_size as f64 * 100.0)
+                                } else {
+                                    String::from("Unknown %")
+                                };
+
+                                if last_printed.elapsed() > std::time::Duration::from_secs(1) {
+                                    updater_log(&format!(
+                                        "[DOWNLOAD PROGRESS] downloaded_size: {}, total_size: {}, progress: {}, path: {:?}",
+                                        downloaded_size,
+                                        total_size,
+                                        progress,
+                                        data.path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "<None>".to_string())
+                                    ));
+                                    last_printed = std::time::Instant::now();
+                                }
+
+                                if let Some(err) = data.error {
+                                    updater_log(&format!("Download failed: {}, url={}", err, download_url));
+                                    bail!("Download failed: {}", err);
+                                }
+
+                                if let Some(path) = data.path {
+                                    if path.exists() {
+                                        updater_log(&format!("Download finished successfully. File saved at: {}", path.display()));
+                                        break;
+                                    }
+                                }
+                        }
+                        Err(e) => {
+                            updater_log(&format!("Failed to get download status: {}, url={}", e.to_string(), download_url));
+                            bail!("Failed to get download status: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    updater_log(&format!("Download failed: {}, url={}", e.to_string(), download_url));
+                    bail!("Download failed: {}", e);
+                }
             }
         }
     }
@@ -236,6 +281,8 @@ fn perform_update() -> ResultType<()> {
     updater_log(&format!("Call function update_new_version with is_msi: {}, version: {}, file_path: {:?}", is_msi, version, file_path.to_str()));
     #[cfg(target_os = "windows")]
     update_new_version(is_msi, &version, &file_path);
+
+    updater_log("Update process completed.");
 
     Ok(())
 }
@@ -262,7 +309,6 @@ fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
                 let exe_dir = exe_path.parent().unwrap();
                 let exe_filename = exe_path.file_name().unwrap().to_string_lossy();
                 let cmd_content = format!("@echo off\r\nchcp 65001 >nul\r\ncd /d \"{}\"\r\n\"{}\" --update\r\n", exe_dir.display(), exe_filename);
-                updater_log(&format!("Cmd content: {}", cmd_content));
 
                 let temp_dir = std::env::temp_dir();
                 let cmd_path: PathBuf = temp_dir.join(format!("update_{}.cmd", version));
