@@ -92,9 +92,6 @@ const REG_NAME_INSTALL_DESKTOPSHORTCUTS: &str = "DESKTOPSHORTCUTS";
 const REG_NAME_INSTALL_STARTMENUSHORTCUTS: &str = "STARTMENUSHORTCUTS";
 pub const REG_NAME_INSTALL_PRINTER: &str = "PRINTER";
 
-// 更新服务名称
-const UPDATE_SERVICE_NAME: &str = "RustDeskUpdater";
-
 pub fn get_focused_display(displays: Vec<DisplayInfo>) -> Option<usize> {
     unsafe {
         let hwnd = GetForegroundWindow();
@@ -828,9 +825,6 @@ async fn run_service(_arguments: Vec<OsString>) -> ResultType<()> {
 
     Ok(())
 }
-
-// 全局服务停止标志
-static SERVICE_STOP_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 async fn launch_server(session_id: DWORD, close_first: bool) -> ResultType<HANDLE> {
     let data = crate::datasender::create_base_info(
@@ -1731,9 +1725,6 @@ if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} 
 
     // 设置更新服务安装命令
     let install_update_service = format!("\"{}\" --install-update-service", &src_exe);
-
-    // 设置更新服务运行命令
-    //let run_update_service = format!("\"{}\" --update-service", &src_exe);
 
     // 构建完整的安装命令。
     // Remember to check if `update_me` need to be changed if changing the `cmds`.
