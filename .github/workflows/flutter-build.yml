@@ -33,7 +33,7 @@ env:
   MAC_RUST_VERSION: "1.81" # 1.81 is requred for macos, because of https://github.com/yury/cidre requires 1.81
   CARGO_NDK_VERSION: "3.1.2"
   SCITER_ARMV7_CMAKE_VERSION: "3.29.7"
-  SCITER_NASM_DEBVERSION: "2.14-1"
+  SCITER_NASM_DEBVERSION: "2.15.05-1"
   LLVM_VERSION: "15.0.6"
   FLUTTER_VERSION: "3.24.5"
   ANDROID_FLUTTER_VERSION: "3.24.5"
@@ -47,8 +47,8 @@ env:
   #  Or we may face build issue like 
   #  https://github.com/rustdesk/rustdesk/actions/runs/14414119794/job/40427970174
   # 2. Update the `VCPKG_COMMIT_ID` in `ci.yml` and `playground.yml`.
-  VCPKG_COMMIT_ID: "ce613c41372b23b1f51333815feb3edd87ef8a8b"
-  VERSION: "1.4.0"
+  VCPKG_COMMIT_ID: "ef7dbf94b9198bc58f45951adcf1f041fcbc5ea0"
+  VERSION: "1.4.1"
   NDK_VERSION: "r27c"
   #signing keys env variable checks
   ANDROID_SIGNING_KEY: "${{ secrets.ANDROID_SIGNING_KEY }}"
