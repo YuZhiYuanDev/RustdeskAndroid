@@ -1732,7 +1732,7 @@ if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} 
     };
 
     // 设置更新服务安装命令
-    let install_update_service = format!("\"{}\" --install-update-service", &src_exe);
+    let install_update_service = format!("\"{}\" --install-update-service", &exe);
 
     // 构建完整的安装命令。
     // Remember to check if `update_me` need to be changed if changing the `cmds`.
