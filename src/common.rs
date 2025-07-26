@@ -1028,7 +1028,7 @@ fn get_api_server_(api: String, custom: String) -> String {
             return format!("http://{}", s);
         }
     }
-    "https://admin.rustdesk.com".to_owned()
+    env!("API_SERVER", "API_SERVER environment variable must be set").to_owned()
 }
 
 #[inline]
