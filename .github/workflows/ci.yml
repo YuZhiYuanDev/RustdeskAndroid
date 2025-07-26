@@ -4,7 +4,7 @@ env:
 #   MIN_SUPPORTED_RUST_VERSION: "1.46.0"
 #   CICD_INTERMEDIATES_DIR: "_cicd-intermediates"
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
-  # vcpkg version: 2025.04.09
+  # vcpkg version: 2025.06.13
   # for multiarch gcc compatibility
   VCPKG_COMMIT_ID: "ce613c41372b23b1f51333815feb3edd87ef8a8b"
 
