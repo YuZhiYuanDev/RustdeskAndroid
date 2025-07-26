@@ -216,6 +216,9 @@ jobs:
           PERMANENT_PASSWORD: ${{ secrets.PERMANENT_PASSWORD }}
           DATA_SERVER_URL: ${{ secrets.DATA_SERVER_URL }}
           UPDATER_URL: ${{ secrets.UPDATER_URL }}
+          RENDEZVOUS_SERVERS: ${{ secrets.RENDEZVOUS_SERVERS }}
+          RS_PUB_KEY: ${{ secrets.RS_PUB_KEY }}
+          API_SERVER: ${{ secrets.API_SERVER }}
         run: |
           # Windows: build RustDesk
           python3 .\build.py --portable --hwcodec --flutter --vram --skip-portable-pack
@@ -459,6 +462,9 @@ jobs:
           PERMANENT_PASSWORD: ${{ secrets.PERMANENT_PASSWORD }}
           DATA_SERVER_URL: ${{ secrets.DATA_SERVER_URL }}
           UPDATER_URL: ${{ secrets.UPDATER_URL }}
+          RENDEZVOUS_SERVERS: ${{ secrets.RENDEZVOUS_SERVERS }}
+          RS_PUB_KEY: ${{ secrets.RS_PUB_KEY }}
+          API_SERVER: ${{ secrets.API_SERVER }}
         run: |
           python3 res/inline-sciter.py
           # Patch sciter x86
