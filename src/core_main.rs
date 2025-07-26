@@ -334,7 +334,12 @@ pub fn core_main() -> Option<Vec<String>> {
             return None;
         } else if args[0] == "--install-update-service" {
             log::info!("start --install-update-service");
-            let _ = crate::update_service::register_service();
+            if args.len() < 2 {
+                log::error!("--install-update-service requires an argument");
+                return None;
+            }
+            let app_path = &args[1];
+            let _ = crate::update_service::register_service(app_path);
             return None;
         } else if args[0] == "--uninstall-update-service" {
             log::info!("start --uninstall-update-service");

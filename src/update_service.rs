@@ -24,12 +24,19 @@ define_windows_service!(ffi_service_main, service_main);
 /// # 返回值
 /// - 成功时返回 `Ok(())`
 /// - 失败时返回错误信息
-pub fn register_service() -> ResultType<()> {
+pub fn register_service(app_path: &str) -> ResultType<()> {
     use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
     use windows_service::service::{ServiceAccess, ServiceInfo, ServiceErrorControl, ServiceStartType};
 
-    // 获取当前可执行文件路径
-    let service_binary_path = ::std::env::current_exe()?;
+    // 使用传入的应用程序路径作为服务二进制路径
+    let service_binary_path = PathBuf::from(app_path);
+
+    // 验证路径是否存在
+    if !service_binary_path.exists() {
+        let msg = format!("Specified application path does not exist: {}", app_path);
+        updater_log(&msg);
+        bail!(msg);
+    }
 
     // 配置服务信息
     let service_info = ServiceInfo {
@@ -38,7 +45,7 @@ pub fn register_service() -> ResultType<()> {
         service_type: ServiceType::OWN_PROCESS, // 服务类型(独立进程)
         start_type: ServiceStartType::AutoStart, // 启动类型(自动启动)
         error_control: ServiceErrorControl::Normal, // 错误处理级别
-        executable_path: service_binary_path, // 可执行文件路径
+        executable_path: service_binary_path.clone(), // 可执行文件路径
         launch_arguments: vec!["--update-service".into()], // 启动参数
         dependencies: vec![], // 依赖服务
         account_name: None, // 运行账户(默认系统账户)
