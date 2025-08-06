@@ -337,9 +337,9 @@ impl Client {
 
         if !key.is_empty() && !token.is_empty() {
             // mainly for the security of token
-            if let Err(e) = secure_tcp(&mut socket, key).await {
-                log::error!("Failed to secure TCP connection: {:?}", e);
-            }
+            secure_tcp(&mut socket, key)
+                .await
+                .map_err(|e| anyhow!("Failed to secure tcp: {}", e))?;
         } else if let Some(udp) = udp.1.as_ref() {
             let tm = Instant::now();
             loop {
@@ -737,9 +737,7 @@ impl Client {
 
             if !key.is_empty() && !token.is_empty() {
                 // mainly for the security of token
-                if let Err(e) = secure_tcp(&mut socket, key).await {
-                    log::error!("Failed to secure TCP connection: {:?}", e);
-                }
+                secure_tcp(&mut socket, key).await?;
             }
 
             ipv4 = socket.local_addr().is_ipv4();
@@ -3733,9 +3731,7 @@ async fn hc_connection_(
     let host = check_port(&rendezvous_server, RENDEZVOUS_PORT);
     let mut conn = connect_tcp(host.clone(), CONNECT_TIMEOUT).await?;
     let key = crate::get_key(true).await;
-    if let Err(e) = crate::secure_tcp(&mut conn, &key).await {
-        log::error!("Secure TCP failed (but ignored): {:?}", e); // 记录错误
-    }
+    crate::secure_tcp(&mut conn, &key).await?;
     let mut msg_out = RendezvousMessage::new();
     msg_out.set_hc(HealthCheck {
         token,
