@@ -15,9 +15,61 @@ pub fn get_device_id() -> ResultType<String> {
     }
 }
 
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(target_os = "ios")]
 pub fn get_device_id() -> ResultType<String> {
     get_fallback_device_id()
+}
+
+#[cfg(target_os = "android")]
+pub fn get_device_id() -> ResultType<String> {
+    get_android_id().unwrap_or_else(|_| "".to_string())
+}
+
+#[cfg(target_os = "android")]
+fn get_android_id() -> ResultType<String> {
+    use jni::{
+        objects::{JClass, JObject, JValue},
+        JNIEnv,
+    };
+
+    // 获取全局的Android上下文
+    let ctx = ndk_context::android_context();
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }?;
+    let env = vm.attach_current_thread()?;
+    let context = JObject::from(ctx.context().cast());
+
+    // 调用Android API获取ANDROID_ID
+    let content_resolver = env
+        .call_method(
+            context,
+            "getContentResolver",
+            "()Landroid/content/ContentResolver;",
+            &[],
+        )?
+        .l()?;
+
+    let settings_secure = env
+        .find_class("android/provider/Settings$Secure")?
+        .into_inner();
+
+    let android_id: String = env
+        .call_static_method(
+            settings_secure,
+            "getString",
+            "(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;",
+            &[
+                JValue::Object(&content_resolver.into()),
+                JValue::Object(&env.new_string("android_id")?.into()),
+            ],
+        )?
+        .l()?
+        .into();
+
+    if android_id.is_empty() {
+        Err(anyhow!("Empty ANDROID_ID"))
+    } else {
+        Ok(android_id)
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -85,13 +137,23 @@ fn get_linux_device_id() -> ResultType<String> {
     get_fallback_device_id()
 }
 
-#[allow(unused)]
+#[cfg(any(target_os = "linux", target_os = "ios"))]
 fn get_fallback_device_id() -> ResultType<String> {
-    use mac_address::get_mac_address;
+    // 非Android平台使用MAC地址
+    #[cfg(not(target_os = "android"))]
+    {
+        use mac_address::get_mac_address;
 
-    match get_mac_address() {
-        Ok(Some(addr)) => Ok(addr.to_string()),
-        Ok(None) => Err(anyhow!("No MAC address found")),
-        Err(e) => Err(anyhow!("MAC address error: {}", e)),
+        match get_mac_address() {
+            Ok(Some(addr)) => Ok(addr.to_string()),
+            Ok(None) => Err(anyhow!("No MAC address found")),
+            Err(e) => Err(anyhow!("MAC address error: {}", e)),
+        }
+    }
+    
+    // Android平台返回空字符串（不会被调用，但需要编译通过）
+    #[cfg(target_os = "android")]
+    {
+        Ok("".to_string())
     }
 }
