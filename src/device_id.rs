@@ -45,7 +45,7 @@ fn get_android_id() -> ResultType<String> {
     let ctx = ndk_context::android_context();
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }?;
     let env = vm.attach_current_thread()?;
-    let context = JObject::from(ctx.context().cast());
+    let context = unsafe { JObject::from_raw(ctx.context().cast()) };
 
     // 2. 获取 ContentResolver
     let content_resolver = env
@@ -74,7 +74,7 @@ fn get_android_id() -> ResultType<String> {
         .l()?;
 
     // 5. 转换为 Rust 字符串
-    let android_id: String = env.get_string(unsafe { JString::from_raw(jstring.into_raw()) })?.into();
+    let android_id: String = env.get_string(unsafe { &JString::from_raw(jstring.into_raw()) })?.into();
 
     // 如果为空，返回空字符串 ""，否则返回实际值
     Ok(android_id)
