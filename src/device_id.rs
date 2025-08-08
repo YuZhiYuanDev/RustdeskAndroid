@@ -44,7 +44,7 @@ fn get_android_id() -> ResultType<String> {
     // 1. 获取 Android 全局上下文
     let ctx = ndk_context::android_context();
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }?;
-    let env = vm.attach_current_thread()?;
+    let mut env = vm.attach_current_thread()?;
     let context = unsafe { JObject::from_raw(ctx.context().cast()) };
 
     // 2. 获取 ContentResolver
@@ -60,6 +60,8 @@ fn get_android_id() -> ResultType<String> {
     // 3. 获取 Settings.Secure 类
     let settings_secure = env.find_class("android/provider/Settings$Secure")?;
 
+    let android_id_param = env.new_string("android_id")?;
+    
     // 4. 调用 getString 方法获取 ANDROID_ID
     let jstring = env
         .call_static_method(
@@ -68,7 +70,7 @@ fn get_android_id() -> ResultType<String> {
             "(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;",
             &[
                 JValue::Object(&content_resolver),
-                JValue::Object(&env.new_string("android_id")?.into()),
+                JValue::Object(&android_id_param.into()),
             ],
         )?
         .l()?;
