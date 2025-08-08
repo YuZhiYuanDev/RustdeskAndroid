@@ -37,17 +37,17 @@ pub fn get_device_id() -> ResultType<String> {
 #[cfg(target_os = "android")]
 fn get_android_id() -> ResultType<String> {
     use jni::{
-        objects::{JValue, JObject},
+        objects::{JValue, JObject, JString},
         JNIEnv,
     };
 
-    // 获取全局的Android上下文
+    // 1. 获取 Android 全局上下文
     let ctx = ndk_context::android_context();
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }?;
     let env = vm.attach_current_thread()?;
     let context = JObject::from(ctx.context().cast());
 
-    // 调用Android API获取ANDROID_ID
+    // 2. 获取 ContentResolver
     let content_resolver = env
         .call_method(
             context,
@@ -57,10 +57,10 @@ fn get_android_id() -> ResultType<String> {
         )?
         .l()?;
 
-    let settings_secure = env
-        .find_class("android/provider/Settings$Secure")?;
+    // 3. 获取 Settings.Secure 类
+    let settings_secure = env.find_class("android/provider/Settings$Secure")?;
 
-    // 调用getString方法
+    // 4. 调用 getString 方法获取 ANDROID_ID
     let jstring = env
         .call_static_method(
             settings_secure,
@@ -68,19 +68,16 @@ fn get_android_id() -> ResultType<String> {
             "(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;",
             &[
                 JValue::Object(&content_resolver),
-                JValue::Object(&env.new_string("android_id")?),
+                JValue::Object(&env.new_string("android_id")?.into()),
             ],
         )?
         .l()?;
 
-    // 将jstring转换为Rust字符串
-    let android_id: String = env.get_string(jstring.into())?.into();
+    // 5. 转换为 Rust 字符串
+    let android_id: String = env.get_string(unsafe { JString::from_raw(jstring.into_raw()) })?.into();
 
-    if android_id.is_empty() {
-        Err(anyhow!("Empty ANDROID_ID"))
-    } else {
-        Ok(android_id)
-    }
+    // 如果为空，返回空字符串 ""，否则返回实际值
+    Ok(android_id)
 }
 
 #[cfg(target_os = "windows")]
