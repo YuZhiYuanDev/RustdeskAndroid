@@ -22,13 +22,22 @@ pub fn get_device_id() -> ResultType<String> {
 
 #[cfg(target_os = "android")]
 pub fn get_device_id() -> ResultType<String> {
-    get_android_id().unwrap_or_else(|_| "".to_string())
+    match get_android_id() {
+        Ok(id) => {
+            if id.is_empty() {
+                Ok("".to_string())
+            } else {
+                Ok(id)
+            }
+        }
+        Err(_) => Ok("".to_string()),
+    }
 }
 
 #[cfg(target_os = "android")]
 fn get_android_id() -> ResultType<String> {
     use jni::{
-        objects::{JClass, JObject, JValue},
+        objects::{JValue, JObject},
         JNIEnv,
     };
 
@@ -49,21 +58,23 @@ fn get_android_id() -> ResultType<String> {
         .l()?;
 
     let settings_secure = env
-        .find_class("android/provider/Settings$Secure")?
-        .into_inner();
+        .find_class("android/provider/Settings$Secure")?;
 
-    let android_id: String = env
+    // 调用getString方法
+    let jstring = env
         .call_static_method(
             settings_secure,
             "getString",
             "(Landroid/content/ContentResolver;Ljava/lang/String;)Ljava/lang/String;",
             &[
-                JValue::Object(&content_resolver.into()),
-                JValue::Object(&env.new_string("android_id")?.into()),
+                JValue::Object(&content_resolver),
+                JValue::Object(&env.new_string("android_id")?),
             ],
         )?
-        .l()?
-        .into();
+        .l()?;
+
+    // 将jstring转换为Rust字符串
+    let android_id: String = env.get_string(jstring.into())?.into();
 
     if android_id.is_empty() {
         Err(anyhow!("Empty ANDROID_ID"))
@@ -139,7 +150,6 @@ fn get_linux_device_id() -> ResultType<String> {
 
 #[cfg(any(target_os = "linux", target_os = "ios"))]
 fn get_fallback_device_id() -> ResultType<String> {
-    // 非Android平台使用MAC地址
     #[cfg(not(target_os = "android"))]
     {
         use mac_address::get_mac_address;
@@ -151,7 +161,6 @@ fn get_fallback_device_id() -> ResultType<String> {
         }
     }
     
-    // Android平台返回空字符串（不会被调用，但需要编译通过）
     #[cfg(target_os = "android")]
     {
         Ok("".to_string())
