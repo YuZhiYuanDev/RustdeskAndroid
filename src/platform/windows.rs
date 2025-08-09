@@ -1756,8 +1756,6 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{path}\\\"
 {install_update_service}
 {sleep}
     ",
-        version = crate::VERSION.replace("-", "."),
-        build_date = crate::BUILD_DATE,
         after_install = get_after_install(
             &exe,
             Some(reg_value_start_menu_shortcuts),
