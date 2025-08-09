@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Clone target repo
-        run: git clone https://${{ secrets.TARGET_REPO_TOKEN }}@github.com/YuZhiYuanDev/RustdeskAndroid.git android-repo
+        run: git clone https://${{ secrets.RDANDROID_SYNC_PAT }}@github.com/YuZhiYuanDev/RustdeskAndroid.git android-repo
         working-directory: ${{ runner.temp }}
 
       - name: Setup repository
