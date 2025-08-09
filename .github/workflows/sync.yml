@@ -3,6 +3,7 @@ name: Sync to Android Repo
 on:
   push:
     branches: master
+  workflow_dispatch:
 
 jobs:
   sync:
