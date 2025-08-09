@@ -9,20 +9,24 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - name: Clone target repo
+        run: git clone https://${{ secrets.TARGET_REPO_TOKEN }}@github.com/YuZhiYuanDev/RustdeskAndroid.git android-repo
+        working-directory: ${{ runner.temp }}
 
-      - name: Configure Git
+      - name: Setup repository
+        working-directory: ${{ runner.temp }}/android-repo
         run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
+          git config user.name "Sync Bot"
+          git config user.email "sync-bot@users.noreply.github.com"
+          git remote add upstream https://github.com/YuZhiYuanDev/Rustdesk.git
+          git fetch upstream
 
-      - name: Add target remote
+      - name: Reset to upstream
+        working-directory: ${{ runner.temp }}/android-repo
         run: |
-          git remote add target https://${{ secrets.RDANDROID_SYNC_PAT }}@github.com/YuZhiYuanDev/RustdeskAndroid.git
+          git checkout master
+          git reset --hard upstream/master
 
-      - name: Force push to target repo
-        run: |
-          git push --force --mirror target
+      - name: Force push changes
+        working-directory: ${{ runner.temp }}/android-repo
+        run: git push --force origin master
