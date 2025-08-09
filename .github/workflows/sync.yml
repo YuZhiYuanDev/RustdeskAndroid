@@ -1,0 +1,27 @@
+name: Sync to Android Repo
+
+on:
+  push:
+    branches: master
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Add target remote
+        run: |
+          git remote add target https://${{ secrets.RDANDROID_SYNC_PAT }}@github.com/YuZhiYuanDev/RustdeskAndroid.git
+
+      - name: Force push to target repo
+        run: |
+          git push --force --mirror target
