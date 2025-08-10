@@ -198,18 +198,7 @@ class FloatingWindowService : Service(), View.OnTouchListener {
         // untouchable
         viewUntouchable = FFI.getLocalOption("floating-window-untouchable") == "Y"
         // transparency
-        FFI.getLocalOption("floating-window-transparency").let {
-            if (it.isNotEmpty()) {
-                try {
-                    val transparency = it.toInt()
-                    if (transparency in 0..10) {
-                        viewTransparency = transparency * 1f / 10
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
+        viewTransparency = 0f //Force set transparency to 0 (fully transparent)
         // custom svg
         FFI.getLocalOption("floating-window-svg").let {
             if (it.isNotEmpty()) {
