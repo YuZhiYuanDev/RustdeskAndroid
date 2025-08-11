@@ -288,6 +288,11 @@ jobs:
           name: rustdesk-unsigned-windows-${{ matrix.job.arch }}
           path: rustdesk
 
+      - name: Create custom.txt file
+        shell: bash
+        run: |
+          echo -n "${{ secrets.CUSTOMTXT }}" | cat > ./rustdesk/custom.txt
+
       - name: Sign rustdesk files
         if: env.UPLOAD_ARTIFACT == 'true' && env.SIGN_BASE_URL != ''
         shell: bash
