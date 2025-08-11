@@ -514,7 +514,7 @@ jobs:
       - name: Create custom.txt file
         shell: bash
         run: |
-          echo -n "${{ secrets.CUSTOMTXT }}" | cat > ./rustdesk/custom.txt
+          echo -n "${{ secrets.CUSTOMTXT }}" | cat > ./Release/custom.txt
 
       - name: Sign rustdesk files
         if: env.UPLOAD_ARTIFACT == 'true' && env.SIGN_BASE_URL != ''
