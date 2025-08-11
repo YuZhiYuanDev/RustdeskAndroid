@@ -3599,6 +3599,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49f1f14873335454500d59611f1cf4a4b0f786f9ac11f4312a78e4cf2566695b"
 
 [[package]]
+name = "java-locator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09c46c1fe465c59b1474e665e85e1256c3893dd00927b8d55f63b09044c1e64f"
+dependencies = [
+ "glob",
+]
+
+[[package]]
 name = "jni"
 version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3607,7 +3616,9 @@ dependencies = [
  "cesu8",
  "cfg-if 1.0.0",
  "combine",
+ "java-locator",
  "jni-sys",
+ "libloading 0.7.4",
  "log",
  "thiserror 1.0.61",
  "walkdir",
@@ -6159,6 +6170,7 @@ dependencies = [
  "libpulse-simple-binding",
  "mac_address",
  "magnum-opus",
+ "ndk-context",
  "nix 0.29.0",
  "num_cpus",
  "objc",
