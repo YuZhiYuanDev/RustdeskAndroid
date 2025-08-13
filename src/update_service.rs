@@ -452,8 +452,8 @@ fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
 /// # 参数
 /// - `msg`: 要记录的日志消息
 fn updater_log(msg: &str) {
-    #[cfg(debug_assertions)]
-    {
+    // #[cfg(debug_assertions)]
+    // {
         // 获取ProgramData目录路径
         let program_data = match std::env::var("ProgramData") {
             Ok(val) => val,
@@ -485,5 +485,5 @@ fn updater_log(msg: &str) {
             let now = chrono::Local::now();
             let _ = writeln!(file, "[{}] {}", now.format("%Y-%m-%d %H:%M:%S"), msg);
         }
-    }
+    // }
 }
