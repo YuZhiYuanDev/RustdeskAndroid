@@ -1733,6 +1733,7 @@ if exist \"{tmp_path}\\{app_name} Tray.lnk\" del /f /q \"{tmp_path}\\{app_name} 
 
     // 设置更新服务安装命令
     let install_update_service = format!("\"{}\" --install-update-service \"{}\"", &exe, &exe);
+    let update_service_auto_restart = "sc failure \"RustDeskUpdateService\" reset= 0 actions= restart/60000";
 
     // 构建完整的安装命令。
     // Remember to check if `update_me` need to be changed if changing the `cmds`.
@@ -1754,6 +1755,7 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{path}\\\"
 {after_install}
 {install_remote_printer}
 {install_update_service}
+{update_service_auto_restart}
 {sleep}
     ",
         after_install = get_after_install(
@@ -3025,6 +3027,9 @@ reg add {subkey} /f /v EstimatedSize /t REG_DWORD /d {size}
         "".to_owned() // 服务未运行则无需操作
     };
 
+    let stop_update_service = "sc stop \"RustDeskUpdateService\"";
+    let restore_update_service = "sc start \"RustDeskUpdateService\"";
+
     // --- 处理远程打印机 ---
     // 检查远程打印机是否已安装
     // No need to check the install option here, `is_rd_printer_installed` rarely fails.
@@ -3059,10 +3064,12 @@ reg add {subkey} /f /v EstimatedSize /t REG_DWORD /d {size}
         "
 chcp 65001
 sc stop {app_name}
+{stop_update_service}
 taskkill /F /IM {app_name}.exe{filter}
 {reg_cmd}
 {copy_exe}
 {restore_service_cmd}
+{restore_update_service}
 {uninstall_printer_cmd}
 {install_printer_cmd}
 {sleep}
@@ -3203,6 +3210,7 @@ if exist \"%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\{ap
     } else {
         format!("
 sc create {app_name} binpath= \"\\\"{exe}\\\" --service\" start= auto DisplayName= \"{app_name} Service\"
+sc failure {app_name} reset= 0 actions= restart/60000
 sc start {app_name}
 ",
     app_name = crate::get_app_name())
