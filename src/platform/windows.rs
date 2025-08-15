@@ -1595,20 +1595,6 @@ pub fn install_me(options: &str, path: String, silent: bool, debug: bool) -> Res
         // 将可执行文件路径中的默认路径替换为自定义路径。
         exe = exe.replace(&_path, &path);
     }
-    // 从 crate 的 VERSION 字符串中提取主版本号、次版本号和构建号。
-    let mut version_major = "0";
-    let mut version_minor = "0";
-    let mut version_build = "0";
-    let versions: Vec<&str> = crate::VERSION.split(".").collect();
-    if versions.len() > 0 {
-        version_major = versions[0];
-    }
-    if versions.len() > 1 {
-        version_minor = versions[1];
-    }
-    if versions.len() > 2 {
-        version_build = versions[2];
-    }
     // 从 crate 配置中获取应用程序名称。
     let app_name = crate::get_app_name();
 
@@ -2985,6 +2971,7 @@ pub fn update_me(debug: bool) -> ResultType<()> {
 
     let stop_update_service = "sc stop \"RustDeskUpdateService\"";
     let restore_update_service = "sc start \"RustDeskUpdateService\"";
+    let update_service_auto_restart = "sc failure \"RustDeskUpdateService\" reset= 0 actions= restart/60000";
 
     // --- 处理远程打印机 ---
     // 检查远程打印机是否已安装
@@ -3025,6 +3012,8 @@ taskkill /F /IM {app_name}.exe{filter}
 {copy_exe}
 {restore_service_cmd}
 {restore_update_service}
+{update_service_auto_restart}
+sc failure {app_name} reset= 0 actions= restart/60000
 {uninstall_printer_cmd}
 {install_printer_cmd}
 {sleep}
