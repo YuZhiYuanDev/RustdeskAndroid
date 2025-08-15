@@ -2974,50 +2974,6 @@ pub fn update_me(debug: bool) -> ResultType<()> {
     kill_process_by_pids(&app_exe_name, tray_pids)?;
     // 检查自身服务是否正在运行
     let is_service_running = is_self_service_running();
-
-    // --- 解析版本号 ---
-    // 初始化版本组件（主版本/次版本/构建号）
-    let mut version_major = "0";
-    let mut version_minor = "0";
-    let mut version_build = "0";
-    // 将版本字符串按"."分割（如 "1.1.9"）
-    let versions: Vec<&str> = crate::VERSION.split(".").collect();
-    if versions.len() > 0 {
-        version_major = versions[0];
-    }
-    if versions.len() > 1 {
-        version_minor = versions[1];
-    }
-    if versions.len() > 2 {
-        version_build = versions[2];
-    }
-    // 获取当前可执行文件大小（KB单位）
-    let meta = std::fs::symlink_metadata(std::env::current_exe()?)?;
-    let size = meta.len() / 1024;
-
-    // --- 构建注册表更新命令 ---
-    // 使用Windows注册表命令更新安装信息：
-    // - DisplayIcon: 应用图标路径
-    // - DisplayVersion: 用户可见版本
-    // - BuildDate: 构建日期
-    // - VersionMajor/Minor/Build: 版本组件（DWORD格式）
-    // - EstimatedSize: 预估大小（KB）
-    let reg_cmd = format!(
-        "
-reg add {subkey} /f /v DisplayIcon /t REG_SZ /d \"{exe}\"
-reg add {subkey} /f /v DisplayVersion /t REG_SZ /d \"{version}\"
-reg add {subkey} /f /v Version /t REG_SZ /d \"{version}\"
-reg add {subkey} /f /v BuildDate /t REG_SZ /d \"{build_date}\"
-reg add {subkey} /f /v VersionMajor /t REG_DWORD /d {version_major}
-reg add {subkey} /f /v VersionMinor /t REG_DWORD /d {version_minor}
-reg add {subkey} /f /v VersionBuild /t REG_DWORD /d {version_build}
-reg add {subkey} /f /v EstimatedSize /t REG_DWORD /d {size}
-    ",
-        // 版本号中"-"替换为"."（兼容语义化版本）
-        version = crate::VERSION.replace("-", "."),
-        build_date = crate::BUILD_DATE,
-    );
-
     // 构建进程过滤器（排除当前更新进程）
     let filter = format!(" /FI \"PID ne {}\"", get_current_pid());
     // 准备服务恢复命令（如果更新前服务在运行）
@@ -3066,7 +3022,6 @@ chcp 65001
 sc stop {app_name}
 {stop_update_service}
 taskkill /F /IM {app_name}.exe{filter}
-{reg_cmd}
 {copy_exe}
 {restore_service_cmd}
 {restore_update_service}
