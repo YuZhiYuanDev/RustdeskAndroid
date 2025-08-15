@@ -124,6 +124,7 @@ pub fn unregister_service() -> ResultType<()> {
 /// - 成功时返回 `Ok(())`
 /// - 失败时返回错误信息
 pub fn start_service_dispatcher() -> ResultType<()> {
+    updater_log("Start service dispatcher.");
     windows_service::service_dispatcher::start(SERVICE_NAME, ffi_service_main)?;
     updater_log("Service dispatcher has exited.");
     Ok(())
@@ -134,6 +135,7 @@ pub fn start_service_dispatcher() -> ResultType<()> {
 /// # 参数
 /// - `_arguments`: 服务启动参数
 fn service_main(_arguments: Vec<std::ffi::OsString>) {
+    updater_log("Enter service main.");
     if let Err(e) = run_service() {
         log::error!("Service failed: {}", e);
         updater_log(&format!("Service failed: {}", e));
@@ -149,6 +151,7 @@ fn run_service() -> ResultType<()> {
     // 创建停止标志(原子布尔值)
     let stop_requested = Arc::new(AtomicBool::new(false));
     let stop_flag = Arc::clone(&stop_requested);
+    updater_log("Stop flag created.");
 
     // 定义服务控制事件处理函数
     let event_handler = move |control_event| match control_event {
@@ -159,11 +162,23 @@ fn run_service() -> ResultType<()> {
         }
         _ => ServiceControlHandlerResult::NotImplemented,
     };
+    updater_log("Event hander defined.");
 
     // 注册服务控制处理器
-    let status_handle = service_control_handler::register(SERVICE_NAME, event_handler)?;
+    updater_log("Registering control handler...");
+    let status_handle = match service_control_handler::register(SERVICE_NAME, event_handler) {
+        Ok(h) => {
+            updater_log("Control handler registered");
+            h
+        }
+        Err(e) => {
+            updater_log(&format!("Handler registration FAILED: {}", e));
+            bail!("Handler registration failed: {}", e);
+        }
+    };
 
     // 设置服务状态为运行中
+    updater_log("Setting service status to Running...");
     status_handle.set_service_status(ServiceStatus {
         service_type: ServiceType::OWN_PROCESS, // 服务类型
         current_state: ServiceState::Running, // 当前状态
@@ -199,6 +214,7 @@ fn run_service() -> ResultType<()> {
     }
 
     // 设置服务状态为已停止
+    updater_log("Setting service status to Stopped...");
     status_handle.set_service_status(ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,
         current_state: ServiceState::Stopped,
