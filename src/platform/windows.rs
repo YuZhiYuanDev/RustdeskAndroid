@@ -3706,12 +3706,13 @@ fn get_pids<S: AsRef<str>>(name: S) -> ResultType<Vec<u32>> {
 }
 
 pub fn is_msi_installed() -> std::io::Result<bool> {
-    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    let uninstall_key = hklm.open_subkey(format!(
-        "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{}",
-        crate::get_app_name()
-    ))?;
-    Ok(1 == uninstall_key.get_value::<u32, _>("WindowsInstaller")?)
+    // let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    // let uninstall_key = hklm.open_subkey(format!(
+    //     "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{}",
+    //     crate::get_app_name()
+    // ))?;
+    // Ok(1 == uninstall_key.get_value::<u32, _>("WindowsInstaller")?)
+    Ok(false)
 }
 
 pub fn is_cur_exe_the_installed() -> bool {
