@@ -1,0 +1,118 @@
+name: Sync Releases to Gitee
+
+on:
+  release:
+    types: [published, edited]
+
+jobs:
+  sync-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Sync Release to Gitee
+        env:
+          # 从GitHub Secrets获取配置
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO_OWNER: ${{ secrets.GITEE_REPO_OWNER }}
+          GITEE_REPO_NAME: ${{ secrets.GITEE_REPO_NAME }}
+          
+          # GitHub Release信息
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          RELEASE_DRAFT: ${{ github.event.release.draft }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_ASSETS: ${{ github.event.release.assets }}
+        run: |
+          # 安装必要工具
+          sudo apt-get -y install jq curl
+
+          # 构建API请求数据
+          data=$(jq -n \
+            --arg tag_name "$RELEASE_TAG" \
+            --arg name "$RELEASE_NAME" \
+            --arg body "$RELEASE_BODY" \
+            --argjson draft "$RELEASE_DRAFT" \
+            --argjson prerelease "$RELEASE_PRERELEASE" \
+            '{tag_name: $tag_name, name: $name, body: $body, draft: $draft, prerelease: $prerelease}')
+
+          echo "Request data: $data"
+
+          # 检查Gitee是否已有该发布
+          echo "Checking if release $RELEASE_TAG exists on Gitee..."
+          existing_release=$(curl -s -H "Authorization: token $GITEE_TOKEN" \
+            "https://gitee.com/api/v5/repos/$GITEE_REPO_OWNER/$GITEE_REPO_NAME/releases/tags/$RELEASE_TAG" || echo "{}")
+          
+          release_id=$(echo "$existing_release" | jq -r '.id' 2>/dev/null)
+
+          # 创建或更新发布
+          if [ "$release_id" != "null" ] && [ ! -z "$release_id" ]; then
+            echo "Updating existing release (ID: $release_id) on Gitee"
+            response=$(curl -s -X PATCH \
+              -H "Content-Type: application/json" \
+              -H "Authorization: token $GITEE_TOKEN" \
+              -d "$data" \
+              "https://gitee.com/api/v5/repos/$GITEE_REPO_OWNER/$GITEE_REPO_NAME/releases/$release_id")
+          else
+            echo "Creating new release on Gitee"
+            response=$(curl -s -X POST \
+              -H "Content-Type: application/json" \
+              -H "Authorization: token $GITEE_TOKEN" \
+              -d "$data" \
+              "https://gitee.com/api/v5/repos/$GITEE_REPO_OWNER/$GITEE_REPO_NAME/releases")
+          fi
+
+          # 检查API响应
+          if echo "$response" | jq -e '.id' > /dev/null 2>&1; then
+            echo "Successfully synced release to Gitee"
+            gitee_release_id=$(echo "$response" | jq -r '.id')
+            
+            # 同步资产文件（如果有）
+            assets_count=$(echo "$RELEASE_ASSETS" | jq -r 'length')
+            if [ "$assets_count" -gt 0 ]; then
+              echo "Found $assets_count assets to sync"
+              
+              # 获取Gitee上已有的资产
+              existing_assets=$(curl -s -H "Authorization: token $GITEE_TOKEN" \
+                "https://gitee.com/api/v5/repos/$GITEE_REPO_OWNER/$GITEE_REPO_NAME/releases/$gitee_release_id/assets" | jq -r '.[].name' || echo "")
+              
+              # 上传每个资产
+              for i in $(seq 0 $(($assets_count - 1))); do
+                asset_name=$(echo "$RELEASE_ASSETS" | jq -r ".[$i].name")
+                asset_url=$(echo "$RELEASE_ASSETS" | jq -r ".[$i].browser_download_url")
+                
+                # 检查资产是否已存在
+                if echo "$existing_assets" | grep -q "^$asset_name$"; then
+                  echo "Asset $asset_name already exists on Gitee, skipping"
+                  continue
+                fi
+                
+                echo "Uploading asset: $asset_name"
+                
+                # 下载资产
+                curl -s -L -o "/tmp/$asset_name" "$asset_url"
+                
+                # 上传到Gitee
+                upload_response=$(curl -s -X POST \
+                  -H "Authorization: token $GITEE_TOKEN" \
+                  -F "file=@/tmp/$asset_name" \
+                  "https://gitee.com/api/v5/repos/$GITEE_REPO_OWNER/$GITEE_REPO_NAME/releases/$gitee_release_id/assets?name=$asset_name")
+                
+                if echo "$upload_response" | jq -e '.id' > /dev/null 2>&1; then
+                  echo "Successfully uploaded asset: $asset_name"
+                else
+                  echo "Failed to upload asset: $asset_name"
+                  echo "Response: $upload_response"
+                fi
+                
+                # 清理临时文件
+                rm -f "/tmp/$asset_name"
+              done
+            fi
+          else
+            echo "Failed to sync release to Gitee"
+            echo "Response: $response"
+            exit 1
+          fi
