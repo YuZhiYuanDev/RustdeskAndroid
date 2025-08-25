@@ -1,7 +1,7 @@
 use crate::{common::do_check_software_update, hbbs_http::create_http_client};
 use hbb_common::{bail, config, log, ResultType};
 use std::{
-    io::{self, Write},
+    io::Write,
     path::PathBuf,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -35,6 +35,7 @@ pub fn update_controlling_session_count(count: usize) {
 }
 
 // 启动自动更新功能，实际只是获取Sender实例
+#[allow(dead_code)]
 pub fn start_auto_update() {
     let _sender = TX_MSG.lock().unwrap();
 }
@@ -242,7 +243,10 @@ fn check_update(manually: bool) -> ResultType<()> {
 // 在Windows系统上更新新版本的逻辑
 #[cfg(target_os = "windows")]
 fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
-    log::debug!("New version is downloaded, update begin, is msi: {is_msi}, version: {version}, file: {:?}", file_path.to_str()); // 记录更新开始的日志
+    log::debug!(
+        "New version is downloaded, update begin, is msi: {is_msi}, version: {version}, file: {:?}",
+        file_path.to_str()
+    ); // 记录更新开始的日志
     if let Some(p) = file_path.to_str() {
         if let Some(session_id) = crate::platform::get_current_process_session_id() {
             if is_msi {
@@ -276,7 +280,7 @@ fn update_new_version(is_msi: bool, version: &str, file_path: &PathBuf) {
         } else {
             log::error!(
                 "Failed to get the current process session id, Error {}",
-                io::Error::last_os_error() // 记录获取session ID失败的错误信息
+                std::io::Error::last_os_error() // 记录获取session ID失败的错误信息
             );
         }
     } else {
