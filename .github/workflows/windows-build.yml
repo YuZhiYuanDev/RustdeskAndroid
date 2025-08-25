@@ -548,24 +548,24 @@ jobs:
         if: env.UPLOAD_ARTIFACT == 'true' && env.SIGN_BASE_URL != ''
         shell: pwsh
         run: |
-          Compress-Archive -Path ./rustdesk/*.dll, ./rustdesk/*.exe -DestinationPath ./rustdesk/unsigned_files.zip -CompressionLevel Fastest
+          Compress-Archive -Path ./Release/*.dll, ./Release/*.exe -DestinationPath ./Release/unsigned_files.zip -CompressionLevel Fastest
 
       - name: Sign rustdesk files
         if: env.UPLOAD_ARTIFACT == 'true' && env.SIGN_BASE_URL != ''
         shell: bash
         run: |
-          curl -X POST -F "file=@./rustdesk/unsigned_files.zip" \
+          curl -X POST -F "file=@./Release/unsigned_files.zip" \
             -H "X-API-KEY: ${{ secrets.SIGN_API_KEY }}" \
             -m 900 \
-            "${{ secrets.SIGN_BASE_URL }}/sign/" -o ./rustdesk/signed_files.zip
+            "${{ secrets.SIGN_BASE_URL }}/sign/" -o ./Release/signed_files.zip
 
       - name: Unzip rustdesk files
         if: env.UPLOAD_ARTIFACT == 'true' && env.SIGN_BASE_URL != ''
         shell: pwsh
         run: |
-          Expand-Archive -Path ./rustdesk/signed_files.zip -DestinationPath ./rustdesk/ -Force
-          Remove-Item ./rustdesk/unsigned_files.zip
-          Remove-Item ./rustdesk/signed_files.zip
+          Expand-Archive -Path ./Release/signed_files.zip -DestinationPath ./Release/ -Force
+          Remove-Item ./Release/unsigned_files.zip
+          Remove-Item ./Release/signed_files.zip
 
       - name: Create custom.txt file
         shell: bash
