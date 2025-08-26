@@ -39,7 +39,7 @@ env:
   #  Or we may face build issue like 
   #  https://github.com/rustdesk/rustdesk/actions/runs/14414119794/job/40427970174
   # 2. Update the `VCPKG_COMMIT_ID` in `ci.yml` and `playground.yml`.
-  VCPKG_COMMIT_ID: "ef7dbf94b9198bc58f45951adcf1f041fcbc5ea0"
+  VCPKG_COMMIT_ID: "dd3097e305afa53f7b4312371f62058d2e665320"
   VERSION: "1.4.2"
   NDK_VERSION: "r27c"
   #signing keys env variable checks

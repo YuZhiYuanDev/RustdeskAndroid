@@ -6,7 +6,7 @@ env:
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
   # vcpkg version: 2025.06.13
   # for multiarch gcc compatibility
-  VCPKG_COMMIT_ID: "ce613c41372b23b1f51333815feb3edd87ef8a8b"
+  VCPKG_COMMIT_ID: "dd3097e305afa53f7b4312371f62058d2e665320"
 
 on:
   workflow_dispatch:
