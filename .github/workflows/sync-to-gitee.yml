@@ -20,7 +20,7 @@ jobs:
           # 安装必要工具
           sudo apt-get -y install jq curl
           
-          # 直接从GitHub上下文中获取Release信息，而不是通过env
+          # 直接从GitHub上下文中获取Release信息
           RELEASE_TAG="${{ github.event.release.tag_name }}"
           RELEASE_NAME="${{ github.event.release.name }}"
           RELEASE_BODY=$(echo '${{ github.event.release.body }}' | jq -R -s -c .)
@@ -67,8 +67,10 @@ jobs:
             echo "Successfully synced release to Gitee"
             gitee_release_id=$(echo "$response" | jq -r '.id')
             
-            # 同步资产文件 - 直接使用github.event.release.assets
-            assets_count=${{ github.event.release.assets.size }}
+            # 同步资产文件 - 使用jq处理GitHub API响应
+            assets_json='${{ toJson(github.event.release.assets) }}'
+            assets_count=$(echo "$assets_json" | jq -r 'length')
+            
             if [ "$assets_count" -gt 0 ]; then
               echo "Found $assets_count assets to sync"
               
@@ -78,8 +80,8 @@ jobs:
               
               # 上传每个资产
               for i in $(seq 0 $(($assets_count - 1))); do
-                asset_name="${{ github.event.release.assets[i].name }}"
-                asset_url="${{ github.event.release.assets[i].browser_download_url }}"
+                asset_name=$(echo "$assets_json" | jq -r ".[$i].name")
+                asset_url=$(echo "$assets_json" | jq -r ".[$i].browser_download_url")
                 
                 # 检查资产是否已存在
                 if echo "$existing_assets" | grep -q "^$asset_name$"; then
