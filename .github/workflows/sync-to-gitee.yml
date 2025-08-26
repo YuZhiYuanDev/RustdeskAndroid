@@ -23,15 +23,18 @@ jobs:
           # 直接从GitHub上下文中获取Release信息
           RELEASE_TAG="${{ github.event.release.tag_name }}"
           RELEASE_NAME="${{ github.event.release.name }}"
-          RELEASE_BODY=$(echo '${{ github.event.release.body }}' | jq -R -s -c .)
+          RELEASE_BODY="${{ github.event.release.body }}"
           RELEASE_DRAFT="${{ github.event.release.draft }}"
           RELEASE_PRERELEASE="${{ github.event.release.prerelease }}"
+          
+          # 处理可能包含特殊字符的RELEASE_BODY
+          ESCAPED_BODY=$(echo "$RELEASE_BODY" | jq -R -s -c .)
           
           # 构建API请求数据
           data=$(jq -n \
             --arg tag_name "$RELEASE_TAG" \
             --arg name "$RELEASE_NAME" \
-            --arg body "$RELEASE_BODY" \
+            --arg body "$ESCAPED_BODY" \
             --argjson draft "$RELEASE_DRAFT" \
             --argjson prerelease "$RELEASE_PRERELEASE" \
             '{tag_name: $tag_name, name: $name, body: $body, draft: $draft, prerelease: $prerelease}')
@@ -67,9 +70,12 @@ jobs:
             echo "Successfully synced release to Gitee"
             gitee_release_id=$(echo "$response" | jq -r '.id')
             
-            # 同步资产文件 - 使用jq处理GitHub API响应
-            assets_json='${{ toJson(github.event.release.assets) }}'
-            assets_count=$(echo "$assets_json" | jq -r 'length')
+            # 使用GitHub API获取资源信息
+            echo "Getting release assets from GitHub API..."
+            assets_response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/tags/$RELEASE_TAG")
+            
+            assets_count=$(echo "$assets_response" | jq -r '.assets | length')
             
             if [ "$assets_count" -gt 0 ]; then
               echo "Found $assets_count assets to sync"
@@ -80,8 +86,8 @@ jobs:
               
               # 上传每个资产
               for i in $(seq 0 $(($assets_count - 1))); do
-                asset_name=$(echo "$assets_json" | jq -r ".[$i].name")
-                asset_url=$(echo "$assets_json" | jq -r ".[$i].browser_download_url")
+                asset_name=$(echo "$assets_response" | jq -r ".assets[$i].name")
+                asset_url=$(echo "$assets_response" | jq -r ".assets[$i].browser_download_url")
                 
                 # 检查资产是否已存在
                 if echo "$existing_assets" | grep -q "^$asset_name$"; then
