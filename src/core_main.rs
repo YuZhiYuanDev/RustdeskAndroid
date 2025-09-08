@@ -35,6 +35,20 @@ pub fn core_main() -> Option<Vec<String>> {
         // return None to terminate the process
         return None;
     }
+
+    // 检查是否需要自动静默安装
+    #[cfg(windows)]
+    let should_silent_install = std::env::args().len() == 1 && 
+        !crate::platform::is_installed() &&
+        !config::is_disable_installation();
+    // 如果需要静默安装，则执行安装流程
+    #[cfg(windows)]
+    if should_silent_install {
+        log::info!("Not installed, running silent installation");
+        hbb_common::allow_err!(crate::run_me(vec!["--silent-install"]));
+        return None;
+    }
+
     let mut args = Vec::new();
     let mut flutter_args = Vec::new();
     let mut i = 0;
