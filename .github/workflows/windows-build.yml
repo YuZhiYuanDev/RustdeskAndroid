@@ -707,3 +707,51 @@ jobs:
             ${{ github.workspace }}/artifacts/windows-flutter-artifacts/rustdesk-${{ env.VERSION }}-x86_64.exe
             ${{ github.workspace }}/artifacts/windows-flutter-artifacts/rustdesk-${{ env.VERSION }}-x86_64.msi
             ${{ github.workspace }}/artifacts/windows-sciter-artifacts/rustdesk-${{ env.VERSION }}-x86-sciter.exe
+
+      - name: Sync Release to GitCode
+        run: |
+          # 创建GitCode Release
+          curl --location 'https://api.gitcode.com/api/v5/repos/${{ secrets.GITCODE_REPO_OWNER }}/${{ secrets.GITCODE_REPO_NAME }}/releases?access_token=${{ secrets.GITCODE_TOKEN }}' \
+            --header 'Content-Type: application/json' \
+            --header 'Accept: application/json' \
+            --data '{
+              "tag_name": "${{ steps.gen_notes.outputs.timestamp }}",
+              "name": "${{ env.TAG_NAME }} Build ${{ steps.gen_notes.outputs.timestamp }}",
+              "body": "${{ steps.gen_notes.outputs.notes }}"
+            }'
+
+          # 上传文件的函数
+          upload_file() {
+            local file_path=$1
+            local file_name=$(basename "$file_path")
+            
+            echo "Uploading $file_name..."
+            
+            # 获取上传URL
+            response=$(curl --location "https://api.gitcode.com/api/v5/repos/${{ secrets.GITCODE_REPO_OWNER }}/${{ secrets.GITCODE_REPO_NAME }}/releases/string/upload_url?access_token=${{ secrets.GITCODE_TOKEN }}&file_name=$file_name" \
+              --header 'Accept: application/json' --silent)
+            
+            # 解析响应
+            url=$(echo "$response" | grep -o '"url": *"[^"]*"' | cut -d'"' -f4)
+            content_type=$(echo "$response" | grep -o '"Content-Type": *"[^"]*"' | cut -d'"' -f4)
+            project_id=$(echo "$response" | grep -o '"x-obs-meta-project-id": *"[^"]*"' | cut -d'"' -f4)
+            acl=$(echo "$response" | grep -o '"x-obs-acl": *"[^"]*"' | cut -d'"' -f4)
+            callback=$(echo "$response" | grep -o '"x-obs-callback": *"[^"]*"' | cut -d'"' -f4)
+            
+            # 上传文件
+            curl -X PUT "$url" \
+              --header "Content-Type: $content_type" \
+              --header "x-obs-meta-project-id: $project_id" \
+              --header "x-obs-acl: $acl" \
+              --header "x-obs-callback: $callback" \
+              --data-binary "@$file_path" \
+              --silent \
+              --write-out "HTTP_STATUS:%{http_code}"
+            
+            echo " - Done"
+          }
+
+          # 上传所有文件
+          upload_file "${{ github.workspace }}/artifacts/windows-flutter-artifacts/rustdesk-${{ env.VERSION }}-x86_64.exe"
+          upload_file "${{ github.workspace }}/artifacts/windows-flutter-artifacts/rustdesk-${{ env.VERSION }}-x86_64.msi"
+          upload_file "${{ github.workspace }}/artifacts/windows-sciter-artifacts/rustdesk-${{ env.VERSION }}-x86-sciter.exe"
