@@ -710,15 +710,23 @@ jobs:
 
       - name: Sync Release to GitCode
         run: |
+          # 获取时间戳
+          TIMESTAMP="${{ needs.build-for-windows-sciter.outputs.formatted-time }}"
+
+          # 处理提交信息
+          COMMIT_MSG=$(git log -1 --pretty=%B | tr '\n' ' ' | sed 's/"/\\"/g')
+
           # 创建GitCode Release
-          curl --location 'https://api.gitcode.com/api/v5/repos/${{ secrets.GITCODE_REPO_OWNER }}/${{ secrets.GITCODE_REPO_NAME }}/releases?access_token=${{ secrets.GITCODE_TOKEN }}' \
+          curl --location "https://api.gitcode.com/api/v5/repos/${{ secrets.GITCODE_REPO_OWNER }}/${{ secrets.GITCODE_REPO_NAME }}/releases?access_token=${{ secrets.GITCODE_TOKEN }}" \
             --header 'Content-Type: application/json' \
             --header 'Accept: application/json' \
-            --data '{
-              "tag_name": "${{ steps.gen_notes.outputs.timestamp }}",
-              "name": "${{ env.TAG_NAME }} Build ${{ steps.gen_notes.outputs.timestamp }}",
-              "body": "${{ steps.gen_notes.outputs.notes }}"
-            }'
+            --data @- <<EOF
+          {
+            "tag_name": "${{ steps.gen_notes.outputs.timestamp }}",
+            "name": "${{ env.TAG_NAME }} Build ${{ steps.gen_notes.outputs.timestamp }}",
+            "body": "**触发分支**: ${{ github.ref_name }}\n**提交哈希**: ${{ github.sha }}\n**提交信息**: $COMMIT_MSG\n**构建时间**: $TIMESTAMP\n**工作流运行**: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\n**Rust 版本**: ${{ env.RUST_VERSION }}\n**Flutter 版本**: ${{ env.FLUTTER_VERSION }}\n**VCPKG 提交**: ${{ env.VCPKG_COMMIT_ID }}"
+          }
+          EOF
 
           # 上传文件的函数
           upload_file() {
