@@ -707,3 +707,66 @@ jobs:
             ${{ github.workspace }}/artifacts/windows-flutter-artifacts/rustdesk-${{ env.VERSION }}-x86_64.exe
             ${{ github.workspace }}/artifacts/windows-flutter-artifacts/rustdesk-${{ env.VERSION }}-x86_64.msi
             ${{ github.workspace }}/artifacts/windows-sciter-artifacts/rustdesk-${{ env.VERSION }}-x86-sciter.exe
+
+      - name: Sync Release to GitCode
+        run: |
+          # 在 Ubuntu 中确保正确处理换行符（使用 tr 替代 sed 更可靠）
+          COMMIT_MSG=$(git log -1 --pretty=%B | tr '\n' ',' | sed 's/,/<br>/g')
+
+          # 去掉最后一个 <br>
+          COMMIT_MSG=${COMMIT_MSG%,}
+
+          # 转义可能的特殊字符
+          COMMIT_MSG_ESCAPED=$(echo "$COMMIT_MSG" | sed 's/"/\\"/g')
+
+          # 原始时间格式
+          ORIGINAL_TIME="${{ needs.build-for-windows-sciter.outputs.formatted-time }}"
+
+          # 转换为新格式 (2025-09-14-14-56-55)
+          NEW_TIMESTAMP=$(date -d "$ORIGINAL_TIME" "+%Y-%m-%d-%H-%M-%S")
+
+          # 创建GitCode Release
+          curl --location "https://api.gitcode.com/api/v5/repos/${{ secrets.GITCODE_REPO_OWNER }}/${{ secrets.GITCODE_REPO_NAME }}/releases?access_token=${{ secrets.GITCODE_TOKEN }}" \
+            --header 'Content-Type: application/json' \
+            --header 'Accept: application/json' \
+            --data "{
+              \"tag_name\": \"$NEW_TIMESTAMP\",
+              \"name\": \"${{ env.TAG_NAME }} Build ${{ steps.gen_notes.outputs.timestamp }}\",
+              \"body\": \"**触发分支**: ${{ github.ref_name }}\n**提交信息**: $COMMIT_MSG_ESCAPED\"
+            }"
+
+          # 上传文件的函数
+          upload_file() {
+            local file_path=$1
+            local file_name=$(basename "$file_path")
+            
+            echo "Uploading $file_name..."
+            
+            # 获取上传URL
+            response=$(curl --location "https://api.gitcode.com/api/v5/repos/${{ secrets.GITCODE_REPO_OWNER }}/${{ secrets.GITCODE_REPO_NAME }}/releases/$NEW_TIMESTAMP/upload_url?access_token=${{ secrets.GITCODE_TOKEN }}&file_name=$file_name" \
+              --header 'Accept: application/json' --silent)
+            
+            # 解析响应
+            url=$(echo "$response" | grep -o '"url": *"[^"]*"' | cut -d'"' -f4)
+            content_type=$(echo "$response" | grep -o '"Content-Type": *"[^"]*"' | cut -d'"' -f4)
+            project_id=$(echo "$response" | grep -o '"x-obs-meta-project-id": *"[^"]*"' | cut -d'"' -f4)
+            acl=$(echo "$response" | grep -o '"x-obs-acl": *"[^"]*"' | cut -d'"' -f4)
+            callback=$(echo "$response" | grep -o '"x-obs-callback": *"[^"]*"' | cut -d'"' -f4)
+            
+            # 上传文件
+            curl -X PUT "$url" \
+              --header "Content-Type: $content_type" \
+              --header "x-obs-meta-project-id: $project_id" \
+              --header "x-obs-acl: $acl" \
+              --header "x-obs-callback: $callback" \
+              --data-binary "@$file_path" \
+              --silent \
+              --write-out "HTTP_STATUS:%{http_code}"
+            
+            echo " - Done"
+          }
+
+          # 上传所有文件
+          upload_file "${{ github.workspace }}/artifacts/windows-flutter-artifacts/rustdesk-${{ env.VERSION }}-x86_64.exe"
+          upload_file "${{ github.workspace }}/artifacts/windows-flutter-artifacts/rustdesk-${{ env.VERSION }}-x86_64.msi"
+          upload_file "${{ github.workspace }}/artifacts/windows-sciter-artifacts/rustdesk-${{ env.VERSION }}-x86-sciter.exe"
