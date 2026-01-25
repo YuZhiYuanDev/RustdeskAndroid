@@ -152,13 +152,13 @@ jobs:
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
 
       - name: Restore base cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.VCPKG_ROOT }}/downloads
           key: vcpkg-dl-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}
 
       - name: Restore binary cache 
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ${{ env.VCPKG_ROOT }}/installed
@@ -168,7 +168,7 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.job.vcpkg-triplet }}-vcpkg-${{ hashFiles('**/vcpkg.json', '**/vcpkg-configuration.json') }}
 
       - name: Cache vcpkg build trees
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.VCPKG_ROOT }}/buildtrees
           key: buildtrees-${{ matrix.job.vcpkg-triplet }}-${{ hashFiles('**/vcpkg.json') }}
@@ -194,7 +194,7 @@ jobs:
         shell: bash
 
       - name: Cache Flutter
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             flutter/bin/cache
@@ -202,7 +202,7 @@ jobs:
           key: ${{ runner.os }}-flutter-${{ hashFiles('**/pubspec.lock') }}
 
       - name: Cache external files
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             usbmmidd_v2.zip
@@ -438,13 +438,13 @@ jobs:
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
 
       - name: Restore base cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.VCPKG_ROOT }}/downloads
           key: vcpkg-dl-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}
 
       - name: Restore binary cache 
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ${{ env.VCPKG_ROOT }}/installed
@@ -454,7 +454,7 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.job.vcpkg-triplet }}-vcpkg-${{ hashFiles('**/vcpkg.json', '**/vcpkg-configuration.json') }}
 
       - name: Cache vcpkg build trees
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.VCPKG_ROOT }}/buildtrees
           key: buildtrees-${{ matrix.job.vcpkg-triplet }}-${{ hashFiles('**/vcpkg.json') }}
@@ -480,13 +480,13 @@ jobs:
         shell: bash
 
       - name: Cache Sciter
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ./Release/sciter.dll
           key: ${{ runner.os }}-sciter-v4.4.8.3-x86
 
       - name: Cache USBMMIDD
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             usbmmidd_v2.zip
