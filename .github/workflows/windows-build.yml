@@ -365,7 +365,7 @@ jobs:
           Remove-Item ./SignOutput/signed_files.zip
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: env.UPLOAD_ARTIFACT == 'true'
         with:
           name: windows-flutter-artifacts
@@ -607,7 +607,7 @@ jobs:
           Remove-Item ./SignOutput/signed_files.zip
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: env.UPLOAD_ARTIFACT == 'true'
         with:
           name: windows-sciter-artifacts
